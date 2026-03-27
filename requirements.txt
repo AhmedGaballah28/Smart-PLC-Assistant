@@ -1,0 +1,42 @@
+# ===========================================
+# SMART PLC ASSISTANT - REQUIREMENTS
+# ChromaDB already installed separately
+# ===========================================
+
+# MQTT Communication
+paho-mqtt==1.6.1
+pymodbus==3.6.9
+
+# LLM APIs
+groq==0.37.1
+openai==2.26.0
+
+# LangChain & Agents
+langchain==1.2.10
+langchain-core==1.2.18
+langchain-community==0.4.1
+langchain-groq==1.1.2
+langgraph==1.0.10
+langsmith==0.7.16
+
+# Embeddings
+sentence-transformers==5.2.3
+
+# Database
+SQLAlchemy==2.0.48
+
+# Dashboard
+streamlit==1.55.0
+plotly==5.18.0
+
+# Data Processing
+pandas==2.3.3
+numpy==2.4.3
+
+# Utilities
+python-dotenv==1.2.2
+pydantic==2.12.5
+rich==14.3.3
+
+# Testing
+pytest==9.0.2
