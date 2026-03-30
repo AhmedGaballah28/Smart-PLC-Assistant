@@ -1,0 +1,61 @@
+this is the full map of the coils, inputs, input regesiter and holding value register 
+         (127.0.0.1:502)
+          Slave ID:1
+
+STATION 1 - Chassis Loading:
+  Sensor 1 (entry)              │ Input 0      Coil 0  │ Belt Conveyor 1
+  Sensor 2 (stop)               │ Input 1      Coil 1  │ Belt Conveyor 1b
+                                │              Coil 2  │ Emitter 1
+                                │              Coil 3  │ Stop Blade 1
+
+STATION 2 - PCB Installation:
+  Sensor 3 (entry)              │ Input 2      Coil 4  │ Belt Conveyor 2
+  Sensor 4 (stop)               │ Input 3      Coil 5  │ Stop Blade 2
+  P&P Moving X                  │ Input 4      Coil 6  │ Emitter 2
+  P&P Moving Z                  │ Input 5      Coil 7  │ Pick & Place Move X
+  P&P Item Detected             │ Input 6      Coil 8  │ Pick & Place Move Z
+                                │              Coil 9  │ Pick & Place Grab
+
+STATION 3 - Display Panel:
+  Positioning Left Bar (Clamped)│ Input 7      Coil 10 │ Belt Conveyor 2b
+  Positioning Left Bar (Limit)  │ Input 8      Coil 11 │ Belt Conveyor 3
+  Sensor 5 (entry)              │ Input 9      Coil 12 │ Positioning Left Bar (Raise)
+                                │              Coil 13 │ Positioning Left Bar (Clamp)
+
+STATION 6 - Quality Control:
+  Diffuse Sensor 6              │ Input 10     Coil 14 │ Belt Conveyor 3b
+  Diffuse Sensor 7              │ Input 11     Coil 15 │ Belt Conveyor 4
+                                │              Coil 16 │ Stop Blade 3
+                                │              Coil 17 │ Stack Light (Green)
+                                │              Coil 18 │ Stack Light (Yellow)
+                                │              Coil 19 │ Stack Light (Red)
+
+STATION 7 - Sorting & Output:
+                                │              Coil 20 │ Transition belt (Stn6→Stn7)
+                                │              Coil 21 │ Belt Conveyor 5
+                                │              Coil 22 │ Pivot Arm Sorter (Turn)
+                                │              Coil 23 │ Pivot Arm Sorter Belt (+)
+                                │              Coil 24 │ Pivot Arm Sorter Belt (-)
+                                │              Coil 25 │ Light Indicator 1 (Green)
+                                │              Coil 26 │ Light Indicator 2 (Red)
+
+TRANSFER SECTION:
+  Sensor 9 (product on belt 6)  │ Input 12     Coil 27 │ Transition Belt (STN7→WH)
+  Right Positioner 1 (Clamped)  │ Input 13     Coil 28 │ Roller Conveyor 1 (transfer)
+  Right Positioner 1 (Limit)    │ Input 14     Coil 29 │ Emitter 3 (pallets)
+  2-Axis P&P (Moving X)         │ Input 15     Coil 30 │ Right Positioner 1 (Clamp)
+  2-Axis P&P (Moving Z)         │ Input 16     Coil 31 │ Right Positioner 1 (Raise)
+  2-Axis P&P (Detected)         │ Input 17     Coil 32 │ 2-Axis P&P Z
+                                │              Coil 33 │ 2-Axis P&P X
+                                │              Coil 34 │ 2-Axis P&P Grab
+
+WAREHOUSE (Numerical Mode):
+  Stacker Crane 0 Moving-X      │ Input 18     Coil 35 │ Stacker Crane 0 Lift
+  Stacker Crane 0 Moving-Z      │ Input 19     Coil 36 │ Stacker Crane 0 (Left)
+  Stacker Crane 0 Left Limit    │ Input 20     Coil 37 │ Stacker Crane 0 (Right)
+  Stacker Crane 0 Middle Limit  │ Input 21     Coil 38 │ Loading Conveyor 1
+  Stacker Crane 0 Right Limit   │ Input 22     Coil 39 │ Roller Conveyor 1 (warehouse)
+
+REGISTERS:
+  Input Reg 0    = Vision Sensor 0 (Value)               (read — FC4)
+  Holding Reg 0  = Stacker Crane 0 Target Position        (write — FC6)

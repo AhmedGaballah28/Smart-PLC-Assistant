@@ -199,3 +199,74 @@ class FactoryModbusClient:
             "write_count": self._write_count,
             "error_count": self._error_count,
         }
+    
+    def read_register(self, address):
+        """
+        Read a register value from Factory I/O.
+        
+        Factory I/O mapping:
+        - Input Registers (FC4)  → Sensors (Vision Sensor, etc.)
+        - Holding Registers (FC3)→ Writable values (Target Position)
+        
+        Tries Input Registers FIRST (because sensors are read-only).
+        Falls back to Holding Registers for compatibility.
+        """
+        # 1) Try Input Register FIRST (Vision Sensor lives here)
+        try:
+            result = self.client.read_input_registers(address, 1)
+            if result is not None and len(result) > 0:
+                self._read_count += 1
+                return result[0]
+        except Exception as e:
+            logger.debug(f"Input register read failed addr={address}: {e}")
+
+        # 2) Fall back to Holding Register (for Target Position, etc.)
+        try:
+            result = self.client.read_holding_registers(address, 1)
+            if result is not None and len(result) > 0:
+                self._read_count += 1
+                return result[0]
+        except Exception as e:
+            logger.debug(f"Holding register read failed addr={address}: {e}")
+
+        self._error_count += 1
+        return None
+
+    # In factory/modbus_client.py — add this method to the FactoryModbusClient class
+
+    # Add these methods to your FactoryModbusClient class
+
+    def write_register(self, address, value):
+        """
+        Write integer value to a Holding Register.
+        Used for: Stacker Crane Target Position.
+        
+        pyModbusTCP uses write_single_register(), not write_register().
+        """
+        try:
+            result = self.client.write_single_register(address, int(value))
+            if result:
+                logger.debug(f"write_register OK: addr={address} val={value}")
+                return True
+            else:
+                logger.error(f"write_register FAILED: addr={address} val={value}")
+                return False
+        except Exception as e:
+            logger.error(f"write_register exception: addr={address} val={value} err={e}")
+            return False
+
+    def read_holding_register(self, address):
+        """
+        Read a Holding Register (read-write register).
+        Different from read_register() which reads Input Registers (read-only).
+        
+        Use this to verify Target Position was written correctly.
+        """
+        try:
+            result = self.client.read_holding_registers(address, 1)
+            if result is None or len(result) == 0:
+                return None
+            return result[0]
+        except Exception as e:
+            logger.error(f"read_holding_register exception: addr={address} err={e}")
+            return None
