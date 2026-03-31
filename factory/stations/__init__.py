@@ -10,6 +10,11 @@ from factory.stations.station6 import Station6
 from factory.stations.station7 import Station7
 from factory.stations.transfer import TransferStation, SyncedTransferStation
 from factory.stations.warehouse import WarehouseController
+from factory.stations.machining import (
+    MachiningCenterController,
+    MachiningBaseController,
+    MachiningLidController,
+)
 
 __all__ = [
     "Station1Controller",
@@ -20,4 +25,7 @@ __all__ = [
     "TransferStation",
     "SyncedTransferStation",
     "WarehouseController",
+    "MachiningCenterController",
+    "MachiningBaseController",
+    "MachiningLidController",
 ]

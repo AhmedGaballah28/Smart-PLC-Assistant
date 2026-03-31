@@ -120,12 +120,13 @@ class WarehouseController:
 
     MAX_CELLS = 54
 
-    def __init__(self, modbus_client, mqtt_client=None, integrated=False):
+    def __init__(self, modbus_client, mqtt_client=None, integrated=False, config=None):
         """
         Args:
             modbus_client: Modbus connection (or ThreadSafeModbus wrapper)
             mqtt_client: Optional MQTT client
             integrated: False = standalone (addr 0+), True = assembly line
+            config: Optional config dict for dynamic offsets (e.g. twin line)
         """
         self.modbus = modbus_client
         self.mqtt = mqtt_client
@@ -138,19 +139,31 @@ class WarehouseController:
         self.store_errors = 0
         self.last_cell_used = 0
         self.integrated = integrated
+        self.config = config or {}
+        
+        self.WH_ID = self.config.get("id", "warehouse")
+        is_line2 = "line2" in self.WH_ID.lower()
+        
+        io_offset = 100 if is_line2 else 0
+        reg_offset = 10 if is_line2 else 0
 
         # Pick address set based on mode
         if integrated:
-            addrs = INTEGRATED_ADDRESSES
-            logger.info("WH: 🔗 INTEGRATED mode")
-            logger.info(f"     Crane:  Coils 35-37  Inputs 18-22")
-            logger.info(f"     Convey: Coils 38-39  (Loading + Roller)")
-            logger.info(f"     Reg:    Holding Reg 0 (Target Position)")
+            # Apply offsets to INTEGRATED_ADDRESSES
+            addrs = {
+                'OUT': {k: v + io_offset for k, v in INTEGRATED_ADDRESSES['OUT'].items()},
+                'IN': {k: v + io_offset for k, v in INTEGRATED_ADDRESSES['IN'].items()},
+                'REG': {k: v + reg_offset for k, v in INTEGRATED_ADDRESSES['REG'].items()}
+            }
+            logger.info(f"WH ({self.WH_ID}): 🔗 INTEGRATED mode")
+            logger.info(f"     Crane:  Coils {35+io_offset}-{37+io_offset}  Inputs {18+io_offset}-{22+io_offset}")
+            logger.info(f"     Convey: Coils {38+io_offset}-{39+io_offset}  (Loading + Roller)")
+            logger.info(f"     Reg:    Holding Reg {0+reg_offset} (Target Position)")
             logger.info(f"     ⚠️ No entry/exit sensors — using timed waits")
             logger.info(f"     ⚠️ No exit conveyors — store only")
         else:
             addrs = STANDALONE_ADDRESSES
-            logger.info("WH: 🔧 STANDALONE mode")
+            logger.info(f"WH ({self.WH_ID}): 🔧 STANDALONE mode")
             logger.info(f"     Coils: 0-8, Inputs: 0-6, Register: 0")
 
         self.OUT = dict(addrs['OUT'])
@@ -732,6 +745,10 @@ class WarehouseController:
     def run(self, use_emitter=False):
         self.is_running = True
         self.main(use_emitter=use_emitter)
+
+    def stop(self):
+        self.running = False
+        self.is_running = False
 
     def get_status(self):
         filled = len(self.occupied)

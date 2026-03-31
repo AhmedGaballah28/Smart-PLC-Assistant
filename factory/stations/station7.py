@@ -36,10 +36,38 @@ class Station7:
     ARM_RETURN_TIME = 0.5       # Time for arm to return to straight
     EXIT_WAIT = 1.0             # Wait after sensor clears
 
-    def __init__(self, modbus_client, station6_ref=None, mqtt_client=None):
+    def __init__(self, modbus_client, station6_ref=None, mqtt_client=None, config=None):
         self.modbus = modbus_client
         self.station6 = station6_ref
         self.mqtt = mqtt_client
+
+        if config is None:
+            self.BELT_4B = 20
+            self.BELT_5 = 21
+            self.SORTER_TURN = 22
+            self.SORTER_BELT_FWD = 23
+            self.SORTER_BELT_REV = 24
+            self.LIGHT_GOOD = 25
+            self.LIGHT_REJECT = 26
+            self.SENSOR_7 = 11
+            self.STATION_ID = "station_7"
+            self.STATION_NAME = "Sorting_Output"
+        else:
+            io = config.get("io", {})
+            self.STATION_ID = config.get("id", "station_7")
+            self.STATION_NAME = config.get("name", "Sorting_Output")
+            
+            offset = 100 if "Line 2" in self.STATION_NAME else 0
+            
+            # Use offset logic for hardcoded addresses, or grab from config if they exist
+            self.BELT_4B = io.get("belt_4b", {}).get("address", 20 + offset)
+            self.BELT_5 = io.get("belt", {}).get("address", 21 + offset) # Wait, config had 30 before? Use what's right.
+            self.SORTER_TURN = io.get("sorter", {}).get("address", 22 + offset)
+            self.SORTER_BELT_FWD = io.get("sorter_belt_fwd", {}).get("address", 23 + offset)
+            self.SORTER_BELT_REV = io.get("sorter_belt_rev", {}).get("address", 24 + offset)
+            self.LIGHT_GOOD = io.get("light_green", {}).get("address", 25 + offset)
+            self.LIGHT_REJECT = io.get("light_red", {}).get("address", 26 + offset)
+            self.SENSOR_7 = io.get("sensor_entry", {}).get("address", 11 + offset)
 
         # State
         self.state = 0
@@ -118,7 +146,7 @@ class Station7:
                 "last_sort_result": self.last_sort_result,
                 "running": self.running
             })
-            self.mqtt.publish("factory/station7/status", payload)
+            self.mqtt.publish(f"factory/{self.STATION_ID}/status", payload)
         except Exception:
             pass
 
@@ -245,14 +273,26 @@ class SyncedStation7(Station7):
     """Station 7 with upstream synchronization"""
 
     def __init__(self, modbus_client, station6_ref=None, mqtt_client=None,
-                 upstream_ready_event=None):
-        super().__init__(modbus_client, station6_ref, mqtt_client)
+                 upstream_ready_event=None, config=None,
+                 transfer_sensor_addr=None):
+        super().__init__(modbus_client, station6_ref, mqtt_client, config)
         self.upstream_ready = upstream_ready_event or threading.Event()
+
+        # Transfer sensor address — auto-detect from config offset or default to 12
+        if transfer_sensor_addr is not None:
+            self.TRANSFER_SENSOR_ADDR = transfer_sensor_addr
+        else:
+            io_offset = 100 if (config and "Line 2" in config.get("name", "")) else 0
+            self.TRANSFER_SENSOR_ADDR = 12 + io_offset
 
     def _signal_ready(self):
         """Tell upstream (Station 6) we're ready"""
         self.upstream_ready.set()
         print("[STN7] 🟢 Ready — signaled upstream")
+
+    def run(self):
+        """Alias for main() to be compatible with thread targets in master script"""
+        self.main()
 
     def main(self):
         self.running = True
@@ -352,18 +392,19 @@ class SyncedStation7(Station7):
                 self.lights_off()
 
                 if getattr(self, "last_sort_result", "") == "GOOD":
-                    print("[STN7] ⏳ Waiting for product to reach Transfer station (input 12)...")
+                    xfer_addr = self.TRANSFER_SENSOR_ADDR
+                    print(f"[STN7] ⏳ Waiting for product to reach Transfer station (input {xfer_addr})...")
                     start_wait = time.time()
                     while self.running and (time.time() - start_wait) < 15.0:
-                        res = self.modbus.read_inputs(12, 1)
+                        res = self.modbus.read_inputs(xfer_addr, 1)
                         if res and res[0]:
                             break
                         time.sleep(0.1)
 
                     if self.running:
-                        print("[STN7] ⏳ Product at Transfer, waiting for Transfer to pick it (input 12 clears)...")
+                        print(f"[STN7] ⏳ Product at Transfer, waiting for Transfer to pick it (input {xfer_addr} clears)...")
                         while self.running:
-                            res = self.modbus.read_inputs(12, 1)
+                            res = self.modbus.read_inputs(xfer_addr, 1)
                             if res and not res[0]:
                                 break
                             time.sleep(0.1)

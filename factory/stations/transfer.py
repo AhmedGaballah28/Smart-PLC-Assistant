@@ -41,29 +41,35 @@ class TransferStation:
             33 - 2-Axis P&P X    (True=PICK/far end, False=PLACE/X=0)
             34 - 2-Axis P&P Grab (True=suction ON)
     """
-
-    # --- Input addresses ---
-    SENSOR_PRODUCT = 12       # Sensor 9: product on belt 6
-    BAR_CLAMPED = 13          # Left bar 2 clamped feedback
-    BAR_LIMIT = 14            # Left bar 2 raised limit
-    PP2_MOVING_X = 15         # 2-Axis P&P moving X
-    PP2_MOVING_Z = 16         # 2-Axis P&P moving Z
-    PP2_DETECTED = 17         # 2-Axis P&P item detected (grab verify)
-
-    # --- Output addresses ---
-    BELT_6 = 27               # Belt Conveyor 6 (product incoming)
-    ROLLER_1 = 28             # Roller Conveyor 1 (pallet)
-    EMITTER_3 = 29            # Emitter 3 (creates pallets)
-    BAR_CLAMP = 30            # Left bar 2 clamp
-    BAR_RAISE = 31            # Left bar 2 raise
-    PP2_Z = 32                # True=DOWN, False=UP
-    PP2_X = 33                # True=PICK (far end), False=PLACE (X=0)
-    PP2_GRAB = 34             # True=suction ON
-
     def __init__(self, modbus_client, station_name="Transfer"):
         self.modbus = modbus_client
         self.name = station_name
         self.state = 0
+        
+        # Dynamic Offsets for Line 2
+        io_offset = 100 if "Line 2" in station_name else 0
+        reg_offset = 10 if "Line 2" in station_name else 0
+        
+        # --- Input addresses ---
+        self.SENSOR_PRODUCT = 12 + io_offset
+        self.BAR_CLAMPED = 13 + io_offset
+        self.BAR_LIMIT = 14 + io_offset
+        self.PP2_MOVING_X = 15 + io_offset
+        self.PP2_MOVING_Z = 16 + io_offset
+        self.PP2_DETECTED = 17 + io_offset
+
+        # --- Output addresses ---
+        self.BELT_6 = 27 + io_offset
+        self.ROLLER_1 = 28 + io_offset
+        self.EMITTER_3 = 29 + io_offset
+        self.BAR_CLAMP = 30 + io_offset
+        self.BAR_RAISE = 31 + io_offset
+        self.PP2_Z = 32 + io_offset
+        self.PP2_X = 33 + io_offset
+        self.PP2_GRAB = 34 + io_offset
+        
+        self.STACKER_REG = 0 + reg_offset
+
         self.running = False
         self.cycle_count = 0
         self.state_entry_time = time.time()
@@ -337,10 +343,10 @@ class TransferStation:
                     print(f"\n  [{self.name}] ✅ CYCLE {self.cycle_count} COMPLETE")
 
                     # Wait for stacker crane to return (holding register 0 == 55)
-                    print(f"  [{self.name}] ⏳ Waiting for stacker to return (reg 0 == 55)...")
+                    print(f"  [{self.name}] ⏳ Waiting for stacker to return (reg {self.STACKER_REG} == 55)...")
                     while self.running:
                         try:
-                            reg_val = self.modbus.read_holding_register(0)
+                            reg_val = self.modbus.read_holding_register(self.STACKER_REG)
                             if reg_val == 55:
                                 break
                         except Exception:
@@ -540,11 +546,11 @@ class SyncedTransferStation(TransferStation):
                     self.cycle_count += 1
                     print(f"\n  [{self.name}] ✅ CYCLE {self.cycle_count} COMPLETE")
 
-                    # Wait for stacker crane to return (holding register 0 == 55)
-                    print(f"  [{self.name}] ⏳ Waiting for stacker to return (reg 0 == 55)...")
+                    # Wait for stacker crane to return (holding register {self.STACKER_REG} == 55)
+                    print(f"  [{self.name}] ⏳ Waiting for stacker to return (reg {self.STACKER_REG} == 55)...")
                     while self.running:
                         try:
-                            reg_val = self.modbus.read_holding_register(0)
+                            reg_val = self.modbus.read_holding_register(self.STACKER_REG)
                             if reg_val == 55:
                                 break
                         except Exception:

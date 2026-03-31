@@ -246,8 +246,6 @@ class Station1Controller:
                 factory/faults/inject            (broadcast, filtered by station field)
     """
 
-    STATION_ID = "station_1"
-
     FAULT_PROB = {
         "overheat_stutter": 0.003,
         "belt_slip_stutter": 0.004,
@@ -264,10 +262,13 @@ class Station1Controller:
 
     EMERGENCY_THRESHOLD = 4
 
-    def __init__(self, modbus_client: FactoryModbusClient, mqtt_client=None):
+    def __init__(self, modbus_client: FactoryModbusClient, mqtt_client=None, config=None):
+        if config is None:
+            config = STATION1_CONFIG
         self.modbus = modbus_client
         self.mqtt = mqtt_client
-        self._io = STATION1_CONFIG["io"]
+        self._io = config["io"]
+        self.STATION_ID = config.get("id", "station_1")
 
         # ─── State ───
         self.state = "stopped"
