@@ -331,10 +331,9 @@ MACHINING_A_CONFIG = {
         "emitter_pulse": 0.5,
         "load_timeout": 30.0,
         "machining_timeout": 30.0,
-        "exit_timeout": 30.0,
+        "exit_timeout": 5.0,
         "settle_time": 0.5,
-        "reset_pulse": 1.0,
-        "emit_sync_delay": 0.5
+        "reset_pulse": 1.0
     },
     "simulation": {
         "normal_temperature": 25.0,
@@ -395,10 +394,9 @@ MACHINING_B_CONFIG = {
         "emitter_pulse": 0.5,
         "load_timeout": 30.0,
         "machining_timeout": 45.0,
-        "exit_timeout": 60.0,
+        "exit_timeout": 10.0,
         "settle_time": 0.5,
-        "reset_pulse": 1.0,
-        "emit_sync_delay": 0.5
+        "reset_pulse": 1.0
     },
     "simulation": {
         "normal_temperature": 25.0,

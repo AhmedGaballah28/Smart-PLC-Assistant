@@ -4,12 +4,19 @@ Line 1: Normal Modbus addresses (0-55)
 Line 2: Offset Modbus addresses (+100 for IO, +10 for Registers)
 
 Both lines are fully independent — each has its own:
-  - MachiningSynchronizer (barrier for emitter sync)
   - Sync events (station-to-station, transfer↔warehouse)
   - Station controllers (Line classes with fault injection)
   - Transition belts
 
-They share ONLY the ThreadSafeModbus connection.
+They share:
+  - ThreadSafeModbus connection
+  - TwinLineSynchronizer (barrier of 4 for cross-line emitter sync)
+
+CROSS-LINE EMITTER SYNC:
+  Both lines' MCs (4 total) wait at a shared Barrier(4) before emitting.
+  Trigger fires from each line's STN2 when base arrives at sensor_station
+  (input 3 for Line 1, input 103 for Line 2).
+  This guarantees gap-free simultaneous emission across both lines.
 """
 
 import sys
@@ -80,6 +87,103 @@ L2_BELT_4B = 120
 L2_BELT_5B = 127
 
 
+# =========================================================================
+# CROSS-LINE EMITTER SYNCHRONIZER
+# =========================================================================
+
+class TwinLineSynchronizer:
+    """
+    Synchronizes ALL 4 machining centers across BOTH lines to emit
+    at the EXACT same time.
+
+    Uses a shared Barrier(4) so no MC emits until ALL 4 are ready.
+
+    Trigger flow:
+      1. Line 1 STN2 detects base at sensor_station (input 3)
+         → calls trigger_line1() → sets L1 MC-A and MC-B ready flags
+      2. Line 2 STN2 detects base at sensor_station (input 103)
+         → calls trigger_line2() → sets L2 MC-A and MC-B ready flags
+      3. Each MC checks its flag, then waits at Barrier(4)
+      4. When all 4 arrive → barrier opens → all emit simultaneously
+
+    First cycle: all 4 skip the trigger wait (first=True) and go
+    straight to the barrier, so the very first emission is also synced.
+    """
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self._emit_barrier = threading.Barrier(4)
+
+        # Per-MC ready flags (set by trigger, consumed by wait)
+        self._ready = {
+            'l1_a': False, 'l1_b': False,
+            'l2_a': False, 'l2_b': False,
+        }
+        # First-cycle skip flags
+        self._first = {
+            'l1_a': True, 'l1_b': True,
+            'l2_a': True, 'l2_b': True,
+        }
+
+    def _wait(self, mc_id, controller):
+        """Generic wait: skip trigger on first cycle, then barrier."""
+        if not self._first[mc_id]:
+            logger.info(f"{controller.STATION_ID} ┃ ⏳ Waiting for STN2 trigger...")
+            while controller.is_running:
+                with self.lock:
+                    if self._ready[mc_id]:
+                        self._ready[mc_id] = False
+                        break
+                time.sleep(0.1)
+            if not controller.is_running:
+                return
+        else:
+            self._first[mc_id] = False
+
+        # Wait at shared barrier for ALL 4 MCs
+        logger.info(f"{controller.STATION_ID} ┃ ⏳ At emit gate — waiting for all MCs...")
+        try:
+            self._emit_barrier.wait(timeout=180)
+        except threading.BrokenBarrierError:
+            return
+        logger.info(f"{controller.STATION_ID} ┃ ✅ Gate open — emitting NOW!")
+
+    # ── Per-MC wait functions (passed as wait_to_emit_fn) ──
+
+    def wait_l1_a(self, controller):
+        self._wait('l1_a', controller)
+
+    def wait_l1_b(self, controller):
+        self._wait('l1_b', controller)
+
+    def wait_l2_a(self, controller):
+        self._wait('l2_a', controller)
+
+    def wait_l2_b(self, controller):
+        self._wait('l2_b', controller)
+
+    # ── Per-line triggers (called by each line's STN2) ──
+
+    def trigger_line1(self):
+        """Called by Line 1 STN2 when base detected at sensor_station (input 3)."""
+        with self.lock:
+            self._ready['l1_a'] = True
+            self._ready['l1_b'] = True
+
+    def trigger_line2(self):
+        """Called by Line 2 STN2 when base detected at sensor_station (input 103)."""
+        with self.lock:
+            self._ready['l2_a'] = True
+            self._ready['l2_b'] = True
+
+    def abort(self):
+        """Call during shutdown to unblock any thread stuck at the barrier."""
+        try:
+            self._emit_barrier.abort()
+        except Exception:
+            pass
+
+
 def init_transition_belts(modbus, io_offset=0):
     """Turn on all 5 transition belts for a line."""
     belts = [
@@ -95,15 +199,21 @@ def init_transition_belts(modbus, io_offset=0):
     logger.info(f"  🔄 Transition belts ON: {belt_list}")
 
 
-def spawn_line(modbus_wrapper, mqtt_client, line_id="LINE1"):
+def spawn_line(modbus_wrapper, mqtt_client, line_id="LINE1",
+               wait_to_emit_a=None, wait_to_emit_b=None,
+               emit_trigger_fn=None):
     """
     Spawn a complete assembly line with all stations.
     
     Each line gets its own:
-      - MachiningSynchronizer (barrier)
       - Sync events (station-to-station coordination)
       - pallet_ready / product_placed events (Transfer ↔ Warehouse)
       - Line classes with proper behavior
+
+    Emitter sync is controlled externally via:
+      - wait_to_emit_a / wait_to_emit_b: wait functions for MC-A / MC-B
+      - emit_trigger_fn: trigger function for STN2
+    If not provided, a per-line MachiningSynchronizer is created (fallback).
     """
     is_l2 = (line_id == "LINE2")
     io_offset = 100 if is_l2 else 0
@@ -131,8 +241,13 @@ def spawn_line(modbus_wrapper, mqtt_client, line_id="LINE1"):
     pallet_ready = threading.Event()       # Warehouse → Transfer (stacker at home)
     product_placed = threading.Event()     # Transfer → Warehouse (product on pallet)
     
-    # ─── Machining synchronizer (barrier for emitter sync) ───
-    mc_sync = MachiningSynchronizer()
+    # ─── Machining sync: use external if provided, else per-line fallback ───
+    mc_sync_local = None
+    if wait_to_emit_a is None:
+        mc_sync_local = MachiningSynchronizer()
+        wait_to_emit_a = mc_sync_local.wait_a
+        wait_to_emit_b = mc_sync_local.wait_b
+        emit_trigger_fn = mc_sync_local.trigger
     
     # ─── Transfer sensor address (for Stn7 to monitor) ───
     transfer_sensor_addr = 12 + io_offset   # Line1: 12, Line2: 112
@@ -155,13 +270,13 @@ def spawn_line(modbus_wrapper, mqtt_client, line_id="LINE1"):
     stn_mach_a = MachiningBaseController(
         modbus_wrapper, mqtt_client,
         downstream_ready=sync_a_ready,
-        wait_to_emit_fn=mc_sync.wait_a,
+        wait_to_emit_fn=wait_to_emit_a,
         config=cfg_ma
     )
     stn_mach_b = MachiningLidController(
         modbus_wrapper, mqtt_client,
         lid_ready_event=sync_lid_ready,
-        wait_to_emit_fn=mc_sync.wait_b,
+        wait_to_emit_fn=wait_to_emit_b,
         config=cfg_mb
     )
     
@@ -180,7 +295,7 @@ def spawn_line(modbus_wrapper, mqtt_client, line_id="LINE1"):
         upstream_ready=sync_1_ready,
         downstream_ready=sync_2_ready,
         lid_ready=sync_lid_ready,
-        emit_trigger_fn=mc_sync.trigger
+        emit_trigger_fn=emit_trigger_fn
     )
     
     # Station 3 — Display Panel Mounting
@@ -243,10 +358,10 @@ def spawn_line(modbus_wrapper, mqtt_client, line_id="LINE1"):
     logger.info(f"  ✅ {line_label} — ALL stations created!")
     logger.info(f"")
     
-    return stations_in_start_order, mc_sync
+    return stations_in_start_order, mc_sync_local
 
 
-def start_all_threads(stations_l1, stations_l2, sync_l1, sync_l2):
+def start_all_threads(stations_l1, stations_l2, twin_sync):
     """
     Start ALL station threads for both lines simultaneously.
     Uses a shared start_event so no line gets a head start.
@@ -267,7 +382,7 @@ def start_all_threads(stations_l1, stations_l2, sync_l1, sync_l2):
             daemon=True, name=f"Line 1-{name}"
         )
         t.start()
-        all_threads.append((station, t, sync_l1))
+        all_threads.append((station, t))
         logger.info(f"  ▶ Line 1 — {name} thread ready")
     
     # Create threads for Line 2
@@ -277,7 +392,7 @@ def start_all_threads(stations_l1, stations_l2, sync_l1, sync_l2):
             daemon=True, name=f"Line 2-{name}"
         )
         t.start()
-        all_threads.append((station, t, sync_l2))
+        all_threads.append((station, t))
         logger.info(f"  ▶ Line 2 — {name} thread ready")
     
     # All threads are created and waiting — release them all at once!
@@ -294,6 +409,7 @@ def main():
     print("  📺 TWIN TV ASSEMBLY LINES")
     print("  🔗 Two independent lines, shared Modbus, concurrent operation")
     print("  📦 Line 1: addresses 0-55  |  Line 2: addresses +100/+10")
+    print("  🔄 Cross-line emitter sync: Barrier(4) for gap-free emission")
     print("═" * 70)
     print()
     
@@ -306,23 +422,40 @@ def main():
     modbus_wrapper = ThreadSafeModbus(client)
     logger.info("🔒 Thread-safe Modbus wrapper active")
     
+    # ─── Create shared cross-line synchronizer ───
+    twin_sync = TwinLineSynchronizer()
+    logger.info("🔄 TwinLineSynchronizer created — Barrier(4) for all MCs")
+    logger.info("   Trigger: STN2 sensor_station (input 3 / input 103)")
+    
     # ─── Create both lines (stations only, no threads yet) ───
     logger.info("Creating Line 1 stations...")
-    stations_l1, sync_l1 = spawn_line(modbus_wrapper, None, "LINE1")
+    stations_l1, _ = spawn_line(
+        modbus_wrapper, None, "LINE1",
+        wait_to_emit_a=twin_sync.wait_l1_a,
+        wait_to_emit_b=twin_sync.wait_l1_b,
+        emit_trigger_fn=twin_sync.trigger_line1
+    )
     
     logger.info("Creating Line 2 stations...")
-    stations_l2, sync_l2 = spawn_line(modbus_wrapper, None, "LINE2")
+    stations_l2, _ = spawn_line(
+        modbus_wrapper, None, "LINE2",
+        wait_to_emit_a=twin_sync.wait_l2_a,
+        wait_to_emit_b=twin_sync.wait_l2_b,
+        emit_trigger_fn=twin_sync.trigger_line2
+    )
     
     # ─── Initialize transition belts for both lines ───
     init_transition_belts(modbus_wrapper, 0)    # Line 1
     init_transition_belts(modbus_wrapper, 100)  # Line 2
     
     # ─── Start ALL threads simultaneously ───
-    all_threads = start_all_threads(stations_l1, stations_l2, sync_l1, sync_l2)
+    all_threads = start_all_threads(stations_l1, stations_l2, twin_sync)
     
     print()
     print("═" * 70)
     print("  ✅ BOTH LINES RUNNING SIMULTANEOUSLY!")
+    print("  🔄 Emitters synced: all 4 MCs rendezvous at Barrier(4)")
+    print("  📡 Re-emit trigger: STN2 sensor_station (input 3 / 103)")
     print("  Press Ctrl+C to stop all stations")
     print("═" * 70)
     print()
@@ -335,16 +468,15 @@ def main():
         print()
         logger.info("🛑 Stopping all stations...")
         
-        # Abort machining synchronizers first (release barrier-stuck threads)
-        sync_l1.abort()
-        sync_l2.abort()
+        # Abort the shared synchronizer first (release barrier-stuck threads)
+        twin_sync.abort()
         
         # Stop all stations
-        for station, thread, _ in all_threads:
+        for station, thread in all_threads:
             station.is_running = False
         
         # Wait for threads to finish
-        for station, thread, _ in all_threads:
+        for station, thread in all_threads:
             thread.join(timeout=3.0)
         
         logger.info("✅ Shutdown complete.")
@@ -353,4 +485,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
