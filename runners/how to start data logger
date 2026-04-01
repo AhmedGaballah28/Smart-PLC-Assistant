@@ -1,0 +1,17 @@
+# Basic usage (saves to ./data/)
+python mqtt_data_logger.py
+
+# Custom output directory
+python mqtt_data_logger.py --output ./experiment_01
+
+# Faster sampling (200ms instead of 500ms)
+python mqtt_data_logger.py --interval 0.2
+
+# Run for exactly 1 hour then stop
+python mqtt_data_logger.py --duration 3600
+
+# Remote MQTT broker
+python mqtt_data_logger.py --host 192.168.1.100
+
+# All options
+python tests\mqtt_data_logger.py --output ./data/run_003 --interval 0.3 --duration 7200 --stats-interval 60 --flush-rows 100

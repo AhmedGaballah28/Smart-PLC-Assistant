@@ -1,0 +1,139 @@
+4 Realistic Fault Injection Test Scenarios
+These simulate real industrial failures that cascade over time. Run each command with ~60 seconds between them to let the aggregator capture the progression.
+
+Scenario 1: Cooling System Failure — Thermal Cascade (Line 1)
+Story: Line 1 chiller loses refrigerant. Spindles heat up first, then heat spreads through the enclosed cabinets to downstream stations. Line 2 stays healthy — agent should notice the asymmetry.
+
+text
+
+1Af1 1 → 1Bf1 1 → 1Af1 3 → 1Bf1 3 → 11f1 2 → 12f1 3 → 12f6 2 → 16f1 3 → 16f6 2 → 1Af1 5 → 17f1 3
+Step	Command	What Happens
+1	1Af1 1	MC-A spindle bearing preload shift — slight warmth, 15% slower
+2	1Bf1 1	MC-B follows — both machining centers warming
+3	1Af1 3	MC-A escalates to 55°C — thermal compensation active, 60% slower
+4	1Bf1 3	MC-B same — both machining centers now visibly degraded
+5	11f1 2	Station 1 belt motor cabinet at 45°C — fan 100%, inspection 25% slower
+6	12f1 3	Station 2 stepper missing steps — assembly significantly slower
+7	12f6 2	Gripper vacuum cup softening from heat — vacuum level dropping
+8	16f1 3	QC vision CPU throttling at 85°C — frame rate drops to 15fps
+9	16f6 2	Vision focus drifting from thermal expansion — wrong classifications
+10	1Af1 5	MC-A CRITICAL: approaching bearing seizure — 2.5× cycle time
+11	17f1 3	Sorting actuator seal expanding — arm sluggish
+What the agent should detect:
+
+Temperature rising across multiple Line 1 stations
+Production rate dropping on Line 1 only
+Line 2 healthy = confirms it's not a global issue
+QC pass_rate dropping from vision errors
+Root cause: upstream machining centers were first to degrade
+Scenario 2: Contaminated Compressed Air — Pneumatic Collapse (Line 2)
+Story: The air dryer desiccant on Line 2 saturates. Moisture enters pneumatic lines, affecting every station with cylinders, grippers, or valves. Line 1 has its own air supply and stays clean.
+
+text
+
+22f3 2 → 22f6 1 → 23f6 2 → 22f6 3 → 27f7 2 → 22f7 2 → 23f6 4 → 27f6 3 → 28f7 3 → 22f6 5 → 27f7 4
+Step	Command	What Happens
+1	22f3 2	Assembly pneumatic pressure oscillating ±0.3 bar
+2	22f6 1	Gripper vacuum cup seal time increasing — still grips
+3	23f6 2	Panel positioner cylinder rod scoring from moisture — jerky motion
+4	22f6 3	Gripper venturi build time doubled — moisture in vacuum line
+5	27f7 2	Sorting 5/2 valve spring weakened — doesn't fully return
+6	22f7 2	Assembly PP guide lubrication contaminated — friction rising
+7	23f6 4	Positioner cylinder seal extruded — bar won't clamp
+8	27f6 3	Sorting pivot bearing grease contaminated — arm sticks randomly
+9	28f7 3	Transfer grab vacuum line restricted — grip limited to 5 seconds
+10	22f6 5	Assembly gripper CRITICAL: cup torn — cannot maintain grip
+11	27f7 4	Sorting valve pilot pressure too low — arm goes unpredictably
+What the agent should detect:
+
+Multiple pneumatic-related faults ONLY on Line 2
+Gripper failures → lids being dropped → incomplete assemblies
+Sorter misroutes → good products going to reject bin
+Positioner jams → panel mounting failures
+Pattern: all affected stations use compressed air → root cause is air supply
+Scenario 3: Power Grid Instability — Both Lines Simultaneously
+Story: A neighboring factory starts a 500kW motor. Voltage sags hit the shared transformer feeding both assembly lines. Some stations ride through it, others cascade into sensor drift from electrical noise.
+
+text
+
+1Af3 2 → 2Af3 2 → 11f3 2 → 21f3 2 → 16f3 3 → 26f3 3 → 11f5 2 → 21f5 2 → 16f6 3 → 26f6 3 → 1Af3 4 → 2Af3 4 → 19f3 3 → 29f3 3 → 17f3 3
+Step	Command	What Happens
+1	1Af3 2	Line 1 MC-A VFD bus capacitor ESR rising — 5% ripple
+2	2Af3 2	Line 2 MC-A same — confirms it's grid-wide
+3	11f3 2	Line 1 Station 1 PSU terminal resistance rising
+4	21f3 2	Line 2 Station 1 same
+5	16f3 3	Line 1 QC LED driver PWM fault — lighting inconsistent
+6	26f3 3	Line 2 QC same — inspection lighting flickering
+7	11f5 2	Line 1 Station 1 sensor LED aging accelerated by voltage stress
+8	21f5 2	Line 2 Station 1 same — sensors drifting from noise
+9	16f6 3	Line 1 QC vision errors — lighting instability causes wrong reads
+10	26f6 3	Line 2 QC same — both lines failing quality checks
+11	1Af3 4	Line 1 MC-A VFD frequent bus dips — drive faults
+12	2Af3 4	Line 2 MC-A same — machining centers struggling
+13	19f3 3	Line 1 warehouse regen resistor — bus ripple during lowering
+14	29f3 3	Line 2 warehouse same
+15	17f3 3	Line 1 sorting valve coil partial short from voltage spikes
+What the agent should detect:
+
+BOTH lines degrading at the same time (not one line — both)
+Pattern: power faults appearing across all station types simultaneously
+QC pass rates dropping on both lines (vision errors from unstable lighting)
+Brownout counters incrementing across many stations
+Root cause: symmetrical fault pattern across both lines = external power issue
+Scenario 4: End-of-Shift Mechanical Wear — Chain Reaction (Line 1)
+Story: After 8 hours of continuous production, worn mechanical components on Line 1 start failing in sequence. A belt slip causes misalignment, debris contaminates downstream sensors, jams cascade backward as stations back up.
+
+text
+
+11f2 2 → 11f4 2 → 12f4 3 → 11f2 4 → 12f7 2 → 13f6 2 → 16f4 3 → 16f5 3 → 16f6 4 → 17f6 3 → 17f7 3 → 19f6 2
+Step	Command	What Happens
+1	11f2 2	Station 1 roller bearing BPFO defect — vibration 18mm/s
+2	11f4 2	Station 1 belt tension low from spring fatigue — products hesitate
+3	12f4 3	Station 2 belt joint opening — regular stuttering, products jerk
+4	11f2 4	Station 1 bearing cage wear — blade chatters, products misaligned
+5	12f7 2	Assembly PP guide lubrication thickening — friction increasing
+6	13f6 2	Panel positioner cylinder rod scoring — jerky bar motion
+7	16f4 3	QC belt contaminated with oil from upstream — products sliding
+8	16f5 3	QC sensor reflector degraded by debris — occasional misses
+9	16f6 4	Vision lens coated with particles — glare causes misreads
+10	17f6 3	Sorting pivot bearing grease broken down — arm sticks randomly
+11	17f7 3	Sorting valve spool contaminated — random routing errors
+12	19f6 2	Warehouse fork chain stretching — fork hesitates during extension
+What the agent should detect:
+
+Faults progressing station-by-station downstream (1→2→3→6→7→9)
+Vibration anomaly on Station 1 was the first warning sign
+Belt stutters incrementing across multiple stations
+QC pass_rate collapsing (vision + sensor + belt all degraded together)
+Good_rate on sorting dropping (misroutes from contaminated valve)
+Line 2 completely healthy = confirms this is Line 1 mechanical wear, not environmental
+Quick Reference — Run Order
+text
+
+SCENARIO 1 (Thermal):   1Af1 1  
+                        1Bf1 1  
+                        1Af1 3 
+                        1Bf1 3 
+                        11f1 2 
+                        12f1 3 
+                        12f6 2 
+                        16f1 3 
+                        16f6 2 
+                        1Af1 5 
+                        17f1 3
+SCENARIO 2 (Pneumatic): 
+                        22f3 2 
+                        22f6 1 
+                        23f6 2 
+                        22f6 3 
+                        27f7 2 
+                        22f7 2 
+                        23f6 4 
+                        27f6 3 
+                        28f7 3 
+                        22f6 5 
+                        27f7 4
+SCENARIO 3 (Power Grid):  1Af3 2 → 2Af3 2 → 11f3 2 → 21f3 2 → 16f3 3 → 26f3 3 → 11f5 2 → 21f5 2 → 16f6 3 → 26f6 3 → 1Af3 4 → 2Af3 4 → 19f3 3 → 29f3 3 → 17f3 3
+SCENARIO 4 (Mechanical):  11f2 2 → 11f4 2 → 12f4 3 → 11f2 4 → 12f7 2 → 13f6 2 → 16f4 3 → 16f5 3 → 16f6 4 → 17f6 3 → 17f7 3 → 19f6 2
+
+CLEAR BETWEEN SCENARIOS:  fc
