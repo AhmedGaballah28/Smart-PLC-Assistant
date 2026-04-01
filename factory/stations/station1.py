@@ -419,7 +419,8 @@ class Station1Controller:
         logger.info(f"   BLADE: {'UP' if up else 'DOWN'}")
 
     def read_sensor_1(self) -> bool:
-        inputs = self.modbus.read_inputs(0, 1)
+        addr = self._io["sensor_entry"]["address"]
+        inputs = self.modbus.read_inputs(addr, 1)
         value = inputs[0] if inputs else False
         if self.faults.sensor_drift:
             if random.random() < self.faults.sensor_drift_amount:
@@ -429,7 +430,8 @@ class Station1Controller:
         return value
 
     def read_sensor_2(self) -> bool:
-        inputs = self.modbus.read_inputs(1, 1)
+        addr = self._io["sensor_station"]["address"]
+        inputs = self.modbus.read_inputs(addr, 1)
         value = inputs[0] if inputs else False
         if self.faults.sensor_drift:
             if random.random() < self.faults.sensor_drift_amount:

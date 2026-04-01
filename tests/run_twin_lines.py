@@ -149,9 +149,6 @@ def spawn_line(modbus_wrapper, mqtt_client, line_id="LINE1"):
     logger.info(f"     Stacker register: holding reg {stacker_register}")
     logger.info(f"{'═' * 60}")
     
-    # ─── Turn on transition belts ───
-    init_transition_belts(modbus_wrapper, io_offset)
-    
     # ─── Create station controllers ───
     
     # Machining Centers
@@ -230,7 +227,7 @@ def spawn_line(modbus_wrapper, mqtt_client, line_id="LINE1"):
         reg_offset=reg_offset
     )
     
-    # ─── Start threads (DOWNSTREAM FIRST!) ───
+    # ─── Station list (DOWNSTREAM FIRST for proper event wiring) ───
     stations_in_start_order = [
         ("Warehouse",  stn_warehouse),
         ("Transfer",   stn_transfer),
@@ -243,18 +240,52 @@ def spawn_line(modbus_wrapper, mqtt_client, line_id="LINE1"):
         ("MC-B",       stn_mach_b),
     ]
     
-    threads = []
-    for name, station in stations_in_start_order:
-        t = threading.Thread(target=station.run, daemon=True, name=f"{line_label}-{name}")
-        t.start()
-        threads.append((station, t, mc_sync))
-        logger.info(f"  ▶ {line_label} — {name} started")
-        time.sleep(0.3)  # Small delay between starts
-    
-    logger.info(f"  ✅ {line_label} — ALL stations running!")
+    logger.info(f"  ✅ {line_label} — ALL stations created!")
     logger.info(f"")
     
-    return stations_in_start_order, threads, mc_sync
+    return stations_in_start_order, mc_sync
+
+
+def start_all_threads(stations_l1, stations_l2, sync_l1, sync_l2):
+    """
+    Start ALL station threads for both lines simultaneously.
+    Uses a shared start_event so no line gets a head start.
+    """
+    start_event = threading.Event()
+    
+    def gated_run(station, start_evt):
+        """Wait for the start signal, then run the station."""
+        start_evt.wait()
+        station.run()
+    
+    all_threads = []
+    
+    # Create threads for Line 1
+    for name, station in stations_l1:
+        t = threading.Thread(
+            target=gated_run, args=(station, start_event),
+            daemon=True, name=f"Line 1-{name}"
+        )
+        t.start()
+        all_threads.append((station, t, sync_l1))
+        logger.info(f"  ▶ Line 1 — {name} thread ready")
+    
+    # Create threads for Line 2
+    for name, station in stations_l2:
+        t = threading.Thread(
+            target=gated_run, args=(station, start_event),
+            daemon=True, name=f"Line 2-{name}"
+        )
+        t.start()
+        all_threads.append((station, t, sync_l2))
+        logger.info(f"  ▶ Line 2 — {name} thread ready")
+    
+    # All threads are created and waiting — release them all at once!
+    logger.info("")
+    logger.info("🚀 ALL threads ready — starting BOTH lines NOW!")
+    start_event.set()
+    
+    return all_threads
 
 
 def main():
@@ -275,18 +306,23 @@ def main():
     modbus_wrapper = ThreadSafeModbus(client)
     logger.info("🔒 Thread-safe Modbus wrapper active")
     
-    # ─── Spawn Line 1 ───
-    logger.info("Initializing Line 1...")
-    stations_l1, threads_l1, sync_l1 = spawn_line(modbus_wrapper, None, "LINE1")
-    time.sleep(2)
+    # ─── Create both lines (stations only, no threads yet) ───
+    logger.info("Creating Line 1 stations...")
+    stations_l1, sync_l1 = spawn_line(modbus_wrapper, None, "LINE1")
     
-    # ─── Spawn Line 2 ───
-    logger.info("Initializing Line 2...")
-    stations_l2, threads_l2, sync_l2 = spawn_line(modbus_wrapper, None, "LINE2")
+    logger.info("Creating Line 2 stations...")
+    stations_l2, sync_l2 = spawn_line(modbus_wrapper, None, "LINE2")
+    
+    # ─── Initialize transition belts for both lines ───
+    init_transition_belts(modbus_wrapper, 0)    # Line 1
+    init_transition_belts(modbus_wrapper, 100)  # Line 2
+    
+    # ─── Start ALL threads simultaneously ───
+    all_threads = start_all_threads(stations_l1, stations_l2, sync_l1, sync_l2)
     
     print()
     print("═" * 70)
-    print("  ✅ BOTH LINES RUNNING!")
+    print("  ✅ BOTH LINES RUNNING SIMULTANEOUSLY!")
     print("  Press Ctrl+C to stop all stations")
     print("═" * 70)
     print()
@@ -304,11 +340,11 @@ def main():
         sync_l2.abort()
         
         # Stop all stations
-        for station, thread, _ in threads_l1 + threads_l2:
+        for station, thread, _ in all_threads:
             station.is_running = False
         
         # Wait for threads to finish
-        for station, thread, _ in threads_l1 + threads_l2:
+        for station, thread, _ in all_threads:
             thread.join(timeout=3.0)
         
         logger.info("✅ Shutdown complete.")
@@ -317,3 +353,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

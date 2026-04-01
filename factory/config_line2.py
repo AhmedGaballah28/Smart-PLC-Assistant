@@ -179,7 +179,7 @@ STATION3_CONFIG = {
     "timing": {
         "mount_time": 5.0,
         "exit_time": 1.5,
-        "mechanical_timeout": 5.0,
+        "mechanical_timeout": 10.0,
         "product_timeout": 120.0,
         "debounce_time": 0.3,
         "settle_time": 0.3
@@ -333,7 +333,8 @@ MACHINING_A_CONFIG = {
         "machining_timeout": 30.0,
         "exit_timeout": 30.0,
         "settle_time": 0.5,
-        "reset_pulse": 1.0
+        "reset_pulse": 1.0,
+        "emit_sync_delay": 0.5
     },
     "simulation": {
         "normal_temperature": 25.0,
@@ -396,7 +397,8 @@ MACHINING_B_CONFIG = {
         "machining_timeout": 45.0,
         "exit_timeout": 60.0,
         "settle_time": 0.5,
-        "reset_pulse": 1.0
+        "reset_pulse": 1.0,
+        "emit_sync_delay": 0.5
     },
     "simulation": {
         "normal_temperature": 25.0,

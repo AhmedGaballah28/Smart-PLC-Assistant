@@ -501,8 +501,8 @@ class SyncedStation2(Station2Controller):
                 self.belt(False)
 
                 if self._emit_trigger_fn:
-                    # Trigger moved to end of cycle (P&P home) to avoid belt blockages!
-                    pass
+                    logger.info("STN2 ┃ 📡 Signaling Machining Centers to emit NEXT parts (product at sensor_station)!")
+                    self._emit_trigger_fn()
 
                 # ── Get lid: from Machining B or local emitter ──
                 if self._lid_ready is not None:
@@ -582,9 +582,9 @@ class SyncedStation2(Station2Controller):
                     break
                 logger.info("STN2 ┃ ✅ P&P home")
 
-                if self._emit_trigger_fn:
-                    logger.info("STN2 ┃ 📡 Signaling Machining Centers to emit NEXT parts (P&P X-axis home)!")
-                    self._emit_trigger_fn()
+                # Emit trigger already fired at product arrival (sensor_station)
+                # to give MCs maximum time to prepare next parts
+                pass
 
                 logger.info("STN2 ┃ STATE 10: Blade DOWN...")
                 self.blade(False)

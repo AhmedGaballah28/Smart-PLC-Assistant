@@ -696,7 +696,7 @@ class MachiningLidController(MachiningCenterController):
 
             if "exit_sensor" in self._io:
                 logger.info(f"{self.STATION_ID} ┃ ⏳ Waiting for P&P pickup...")
-                self._wait_for(self.read_exit_sensor, timeout=10.0,
+                self._wait_for(self.read_exit_sensor, timeout=self._timing["exit_timeout"],
                                state_name="wait_lid_on_bay")
                 self._wait_for(lambda: not self.read_exit_sensor(),
                                timeout=self._timing["exit_timeout"],
