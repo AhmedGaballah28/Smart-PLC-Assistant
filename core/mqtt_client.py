@@ -26,6 +26,12 @@ logger = logging.getLogger(__name__)
 class MQTTClient:
     """
     MQTT Client for Smart PLC Assistant.
+
+    Callback signature for subscribers:
+        callback(topic: str, payload: dict|str)
+
+    The client automatically parses JSON payloads into dicts.
+    Non-JSON payloads are passed as strings.
     """
 
     def __init__(self, client_id: str):
@@ -49,7 +55,10 @@ class MQTTClient:
 
     def connect(self) -> bool:
         try:
-            logger.info(f"Connecting to MQTT broker at {MQTT_BROKER_HOST}:{MQTT_BROKER_PORT}...")
+            logger.info(
+                f"Connecting to MQTT broker at "
+                f"{MQTT_BROKER_HOST}:{MQTT_BROKER_PORT}..."
+            )
             self.client.connect(MQTT_BROKER_HOST, MQTT_BROKER_PORT, keepalive=60)
             self.client.loop_start()
             connected = self._connection_event.wait(timeout=10)
@@ -95,12 +104,21 @@ class MQTTClient:
             return False
 
     def subscribe(self, topic: str, callback: Optional[Callable] = None):
+        """
+        Subscribe to an MQTT topic.
+
+        Args:
+            topic: MQTT topic (supports wildcards + and #)
+            callback: Function with signature callback(topic, payload)
+                     where payload is a dict (parsed JSON) or str
+        """
         self.client.subscribe(topic)
         if callback:
             self._topic_callbacks[topic] = callback
         logger.info(f"📥 Subscribed to: {topic}")
 
     def set_general_callback(self, callback: Callable):
+        """Set a callback that receives ALL messages."""
         self._general_callback = callback
 
     def _on_connect(self, client, userdata, flags, rc):
@@ -108,6 +126,7 @@ class MQTTClient:
             self.is_connected = True
             self._connection_event.set()
             logger.info(f"✅ MQTT Connected: {self.client_id}")
+            # Re-subscribe to all topics on reconnect
             for topic in self._topic_callbacks:
                 self.client.subscribe(topic)
         else:
@@ -116,7 +135,7 @@ class MQTTClient:
                 2: "Invalid client identifier",
                 3: "Server unavailable",
                 4: "Bad username or password",
-                5: "Not authorized"
+                5: "Not authorized",
             }
             msg = error_messages.get(rc, f"Unknown error: {rc}")
             logger.error(f"❌ MQTT Connection failed: {msg}")
@@ -128,6 +147,14 @@ class MQTTClient:
             logger.warning(f"⚠️ Unexpected disconnect (code: {rc})")
 
     def _on_message(self, client, userdata, msg):
+        """
+        Central message dispatcher.
+
+        Parses JSON payload, then routes to matching topic callbacks
+        using MQTT wildcard matching.
+
+        Callbacks are called with: callback(topic_str, payload_dict)
+        """
         try:
             raw_payload = msg.payload.decode("utf-8")
             try:
@@ -135,10 +162,12 @@ class MQTTClient:
             except json.JSONDecodeError:
                 data = raw_payload
 
+            # Route to matching topic callbacks
             for subscribed_topic, callback in self._topic_callbacks.items():
                 if mqtt.topic_matches_sub(subscribed_topic, msg.topic):
                     callback(msg.topic, data)
 
+            # Also send to general callback if set
             if self._general_callback:
                 self._general_callback(msg.topic, data)
 
@@ -151,29 +180,42 @@ class MQTTClient:
 # =============================================================================
 
 def create_sensor_message(sensor_name: str, value: float, unit: str) -> dict:
+    """Create a standardized sensor data message."""
     return {
         "sensor": sensor_name,
         "value": round(value, 2),
         "unit": unit,
-        "quality": "good"
+        "quality": "good",
     }
 
 
-def create_alert_message(alert_id: str, severity: str, parameter: str,
-                         value: float, threshold: float, message: str) -> dict:
+def create_alert_message(
+    alert_id: str,
+    severity: str,
+    parameter: str,
+    value: float,
+    threshold: float,
+    message: str,
+) -> dict:
+    """Create a standardized alert message."""
     return {
         "alert_id": alert_id,
         "severity": severity,
         "parameter": parameter,
         "current_value": value,
         "threshold": threshold,
-        "message": message
+        "message": message,
     }
 
 
-def create_approval_request(request_id: str, diagnosis: dict,
-                            repair_proposal: dict, validation: dict,
-                            simulation: dict) -> dict:
+def create_approval_request(
+    request_id: str,
+    diagnosis: dict,
+    repair_proposal: dict,
+    validation: dict,
+    simulation: dict,
+) -> dict:
+    """Create a human-in-the-loop approval request."""
     return {
         "request_id": request_id,
         "type": "approval_request",
@@ -183,5 +225,5 @@ def create_approval_request(request_id: str, diagnosis: dict,
         "validation_result": validation,
         "simulation_result": simulation,
         "options": ["APPROVE", "REJECT", "MODIFY"],
-        "message": "Human approval required before executing this change."
+        "message": "Human approval required before executing this change.",
     }
