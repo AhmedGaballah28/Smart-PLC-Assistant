@@ -34,6 +34,7 @@ MODBUS_TIMEOUT = 5.0
 # =============================================================================
 STATION1_CONFIG = {
     "name": "Chassis Loading & Inspection",
+    "id": "station_1",
     "description": "Loads TV chassis (blue base) and performs initial inspection",
 
     "io": {
@@ -94,6 +95,7 @@ STATION1_CONFIG = {
 
 STATION2_CONFIG = {
     "name": "PCB Board Installation",
+    "id": "station_2",
     "description": "Places PCB board (product lid) onto chassis using Pick & Place",
 
     "io": {
@@ -151,82 +153,6 @@ STATION2_CONFIG = {
     },
 }
 
-# =============================================================================
-# FUTURE STATIONS
-# =============================================================================
-STATION3_CONFIG = {
-    "name": "Display Panel Mounting",
-    "description": "Simulates LCD panel mounting using Aligners + timed stop",
-    "io": {
-        "sensor_entry":   {"address": 7,  "type": "input"},
-        "sensor_station": {"address": 8,  "type": "input"},
-        "belt":         {"address": 10, "type": "output"},
-        "stop_blade":   {"address": 11, "type": "output"},
-        "aligners":     {"address": 12, "type": "output"},
-        "light_green":  {"address": 13, "type": "output"},
-        "light_yellow": {"address": 14, "type": "output"},
-    },
-    "timing": {"mounting_time": 5.0, "product_timeout": 60.0},
-}
-
-STATION4_CONFIG = {
-    "name": "Wiring Connection",
-    "description": "Simulates internal wiring with timed stop",
-    "io": {
-        "sensor_entry":   {"address": 9,  "type": "input"},
-        "sensor_station": {"address": 10, "type": "input"},
-        "belt":         {"address": 15, "type": "output"},
-        "stop_blade":   {"address": 16, "type": "output"},
-        "light_green":  {"address": 17, "type": "output"},
-        "light_yellow": {"address": 18, "type": "output"},
-    },
-    "timing": {"wiring_time": 3.0, "product_timeout": 60.0},
-}
-
-STATION5_CONFIG = {
-    "name": "Back Cover Assembly",
-    "description": "Simulates back cover pressing using Pusher",
-    "io": {
-        "sensor_entry":   {"address": 11, "type": "input"},
-        "sensor_station": {"address": 12, "type": "input"},
-        "belt":         {"address": 19, "type": "output"},
-        "stop_blade":   {"address": 20, "type": "output"},
-        "pusher":       {"address": 21, "type": "output"},
-        "light_green":  {"address": 22, "type": "output"},
-        "light_yellow": {"address": 23, "type": "output"},
-    },
-    "timing": {"cover_press_time": 4.0, "product_timeout": 60.0},
-}
-
-STATION6_CONFIG = {
-    "name": "Quality Control & Testing",
-    "description": "Vision sensor inspects assembled product",
-    "io": {
-        "sensor_entry":   {"address": 13, "type": "input"},
-        "sensor_station": {"address": 14, "type": "input"},
-        "vision_sensor":  {"address": 15, "type": "input"},
-        "belt":         {"address": 24, "type": "output"},
-        "stop_blade":   {"address": 25, "type": "output"},
-        "light_green":  {"address": 26, "type": "output"},
-        "light_yellow": {"address": 27, "type": "output"},
-        "light_red":    {"address": 28, "type": "output"},
-        "alarm":        {"address": 29, "type": "output"},
-    },
-    "timing": {"inspection_time": 3.0, "product_timeout": 60.0},
-}
-
-STATION7_CONFIG = {
-    "name": "Sorting & Output",
-    "description": "Routes products based on QC result",
-    "io": {
-        "sensor_entry": {"address": 16, "type": "input"},
-        "belt":        {"address": 30, "type": "output"},
-        "sorter":      {"address": 31, "type": "output"},
-        "light_green": {"address": 32, "type": "output"},
-        "light_red":   {"address": 33, "type": "output"},
-    },
-    "timing": {"sort_delay": 2.0, "product_timeout": 30.0},
-}
 
 # =============================================================================
 # THRESHOLDS FOR AI MONITORING
@@ -247,6 +173,71 @@ THRESHOLDS = {
     "cycle_time": {
         "normal_min": 5.0, "normal_max": 15.0,
         "warning": 20.0, "critical": 30.0, "unit": "seconds",
+    },
+}
+
+# =============================================================================
+# MACHINING CENTER A — Blue Base Producer (Coils 40-45, Inputs 24-27)
+# =============================================================================
+MACHINING_A_CONFIG = {
+    "name": "Machining Center A — Blue Base Producer",
+    "station_id": "machining_a",
+    "produce_lids": False,
+    "machining_time": 3.0,
+    "io": {
+        "is_busy":      {"address": 24, "type": "input"},
+        "has_error":    {"address": 25, "type": "input"},
+        "opened":       {"address": 26, "type": "input"},
+        "exit_sensor":  {"address": 27, "type": "input"},
+        "emitter":      {"address": 40, "type": "output"},
+        "produce_lids": {"address": 41, "type": "output"},
+        "start":        {"address": 42, "type": "output"},
+        "stop":         {"address": 43, "type": "output"},
+        "reset":        {"address": 44, "type": "output"},
+        "exit_belt":    {"address": 45, "type": "output"},
+    },
+    "registers": {"progress": 1},
+    "timing": {
+        "emitter_pulse": 0.5, "load_timeout": 30.0,
+        "machining_timeout": 30.0, "exit_timeout": 5.0,
+        "settle_time": 0.5, "reset_pulse": 1.0,
+    },
+    "simulation": {
+        "normal_temperature": 25.0, "temperature_noise": 0.4,
+        "normal_vibration": 1.5, "vibration_noise": 0.3,
+        "cnc_motor_power": 1.2,
+    },
+}
+
+# =============================================================================
+# MACHINING CENTER B — Green Lid Producer (Coils 46-50, Inputs 28-31)
+# =============================================================================
+MACHINING_B_CONFIG = {
+    "name": "Machining Center B — Green Lid Producer",
+    "station_id": "machining_b",
+    "produce_lids": True,
+    "machining_time": 6.0,
+    "io": {
+        "is_busy":      {"address": 28, "type": "input"},
+        "has_error":    {"address": 29, "type": "input"},
+        "opened":       {"address": 30, "type": "input"},
+        "exit_sensor":  {"address": 31, "type": "input"},
+        "emitter":      {"address": 46, "type": "output"},
+        "produce_lids": {"address": 47, "type": "output"},
+        "start":        {"address": 48, "type": "output"},
+        "stop":         {"address": 49, "type": "output"},
+        "reset":        {"address": 50, "type": "output"},
+    },
+    "registers": {"progress": 2},
+    "timing": {
+        "emitter_pulse": 0.5, "load_timeout": 30.0,
+        "machining_timeout": 45.0, "exit_timeout": 10.0,
+        "settle_time": 0.5, "reset_pulse": 1.0,
+    },
+    "simulation": {
+        "normal_temperature": 25.0, "temperature_noise": 0.4,
+        "normal_vibration": 1.5, "vibration_noise": 0.3,
+        "cnc_motor_power": 1.5,
     },
 }
 

@@ -63,26 +63,25 @@ class Station2FaultState(FaultState):
 
 class Station2Controller:
     """
-    Station 2: PCB Installation using Pick & Place (X + Z axes).
-
-    MQTT TOPICS:
-      Listens on: factory/station_2/faults/inject  (dedicated)
-                  factory/faults/inject              (broadcast, filtered)
+    Controls Station 2 (PCB Board Installation).
+    Uses Pick & Place robot.
     """
 
     STATION_ID = "station_2"
 
-    def __init__(self, modbus_client: FactoryModbusClient,
-                 mqtt_client=None,
-                 upstream_ready: Optional[threading.Event] = None):
+    def __init__(self, modbus_client: FactoryModbusClient, mqtt_client=None, upstream_ready: Optional[threading.Event] = None, config=None):
+        if config is None:
+            config = STATION2_CONFIG
         self.modbus = modbus_client
         self.mqtt = mqtt_client
         self._upstream_ready = upstream_ready
+        self.STATION_ID = config.get("id", "station_2")
 
-        self._io = STATION2_CONFIG["io"]
-        self._timing = STATION2_CONFIG["timing"]
-        self._pp_config = STATION2_CONFIG["pick_and_place"]
-        self._sim_config = STATION2_CONFIG["simulation"]
+        # Configurations
+        self._io = config["io"]
+        self._timing = config["timing"]
+        self._pp_config = config["pick_and_place"]
+        self._sim_config = config["simulation"]
         self._fault_config = FAULT_CONFIG
 
         # ─── State ───

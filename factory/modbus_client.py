@@ -4,6 +4,7 @@ Handles communication with Factory I/O
 """
 
 import logging
+import struct
 from typing import Optional, List
 from pyModbusTCP.client import ModbusClient
 
@@ -270,3 +271,6 @@ class FactoryModbusClient:
         except Exception as e:
             logger.error(f"read_holding_register exception: addr={address} err={e}")
             return None
+
+    # Method read_float_register removed—Factory I/O Float tags 
+    # mapped consecutively directly to Modbus overwrite each other if read dynamically from raw byte structs.

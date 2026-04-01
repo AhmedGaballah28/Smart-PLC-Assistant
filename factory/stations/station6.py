@@ -68,9 +68,41 @@ class Station6:
     # Set to None to run in discovery mode (logs values without judging)
     EXPECTED_VALUE = 5
 
-    def __init__(self, modbus_client, mqtt_client=None):
+    def __init__(self, modbus_client, mqtt_client=None, config=None):
         self.modbus = modbus_client
         self.mqtt = mqtt_client
+        
+        if config is None:
+            # Fallback for older code that doesn't pass config
+            self.BELT_3B = 14
+            self.BELT_4 = 15
+            self.STOP_BLADE_3 = 16
+            self.LIGHT_GREEN = 17
+            self.LIGHT_YELLOW = 18
+            self.LIGHT_RED = 19
+            self.SENSOR_6 = 10
+            self.VISION_SENSOR = 0
+            self.STATION_ID = "station_6"
+            self.STATION_NAME = "Quality_Control"
+        else:
+            io = config.get("io", {})
+            self.STATION_ID = config.get("id", "station_6")
+            self.STATION_NAME = config.get("name", "Quality_Control")
+            
+            # Extract dynamically from config. Note: old codebase used different numbers.
+            # E.g. belt4 was 15, but config says 24. We'll trust config if provided!
+            self.BELT_3B = io.get("belt_3b", {}).get("address", 14) # Not in config, fallback
+            self.BELT_4 = io.get("belt", {}).get("address", 15)
+            self.STOP_BLADE_3 = io.get("stop_blade", {}).get("address", 16)
+            self.LIGHT_GREEN = io.get("light_green", {}).get("address", 17)
+            self.LIGHT_YELLOW = io.get("light_yellow", {}).get("address", 18)
+            self.LIGHT_RED = io.get("light_red", {}).get("address", 19)
+            
+            self.SENSOR_6 = io.get("sensor_entry", {}).get("address", 10)
+            
+            # Using Registers offset
+            reg_offset = 10 if "Line 2" in self.STATION_NAME else 0
+            self.VISION_SENSOR = reg_offset + 0
 
         # State
         self.state = 0
@@ -214,7 +246,7 @@ class Station6:
                 "discovery_mode": self.discovery_mode,
                 "running": self.running
             })
-            self.mqtt.publish("factory/station6/status", payload)
+            self.mqtt.publish(f"factory/{self.STATION_ID}/status", payload)
         except Exception:
             pass
 
@@ -343,8 +375,8 @@ class SyncedStation6(Station6):
     """Station 6 with upstream/downstream synchronization"""
 
     def __init__(self, modbus_client, mqtt_client=None,
-                 upstream_ready_event=None, downstream_ready_event=None):
-        super().__init__(modbus_client, mqtt_client)
+                 upstream_ready_event=None, downstream_ready_event=None, config=None):
+        super().__init__(modbus_client, mqtt_client, config)
         # THIS station sets this when ready to receive from upstream (Stn3)
         self.upstream_ready = upstream_ready_event or threading.Event()
         # DOWNSTREAM (Stn7) sets this when ready to receive from us
@@ -363,6 +395,10 @@ class SyncedStation6(Station6):
             self.downstream_ready.clear()
             print("[STN6] ✅ Downstream ready — releasing")
         super().blade(up)
+
+    def run(self):
+        """Alias for main() to be compatible with thread targets in master script"""
+        self.main()
 
     def main(self):
         self.running = True

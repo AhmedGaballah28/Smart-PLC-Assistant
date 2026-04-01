@@ -96,18 +96,20 @@ class Station3Controller:
                   factory/faults/inject              (broadcast, filtered)
     """
 
-    STATION_ID = "station_3"
-
     def __init__(self, modbus_client: FactoryModbusClient,
                  mqtt_client=None,
-                 upstream_ready: Optional[threading.Event] = None):
+                 upstream_ready: Optional[threading.Event] = None,
+                 config: Optional[Dict] = None):
+        if config is None:
+            config = STATION3_IO_CONFIG
         self.modbus = modbus_client
         self.mqtt = mqtt_client
         self._upstream_ready = upstream_ready
+        self.STATION_ID = config.get("id", "station_3")
 
-        self._io = STATION3_IO_CONFIG["io"]
-        self._timing = STATION3_IO_CONFIG["timing"]
-        self._sim_config = STATION3_IO_CONFIG["simulation"]
+        self._io = config["io"]
+        self._timing = config["timing"]
+        self._sim_config = config["simulation"]
         self._fault_config = FAULT_CONFIG
 
         # ─── State ───

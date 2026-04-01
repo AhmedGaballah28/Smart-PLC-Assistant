@@ -61,6 +61,7 @@ from factory.stations.station6 import Station6, SyncedStation6, VISION_ITEMS
 from factory.stations.station7 import Station7, SyncedStation7
 from factory.stations.transfer import TransferStation, SyncedTransferStation
 from factory.stations.warehouse import WarehouseController
+from factory.stations.machining import MachiningBaseController, MachiningLidController
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +129,86 @@ BELT_5B = 27     # Transition belt: Station 7 → Transfer/Warehouse
 
 
 # ═══════════════════════════════════════════════════════════
+# MACHINING SYNCHRONIZER
+# ═══════════════════════════════════════════════════════════
+
+class MachiningSynchronizer:
+    """
+    Synchronizes both machining centers to emit at the EXACT same time.
+
+    EVERY CYCLE: Both MCs wait for trigger() from STN2 (except first cycle),
+                 then wait at a threading.Barrier(2) so neither emits until
+                 BOTH are ready → guaranteed simultaneous emission.
+    """
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.mc_a_ready = False
+        self.mc_b_ready = False
+        # Barrier ensures both MCs rendezvous before EVERY emission
+        self._emit_barrier = threading.Barrier(2)
+        self._a_first = True
+        self._b_first = True
+
+    def wait_a(self, controller):
+        # Subsequent cycles: wait for trigger() from Station 2
+        if not self._a_first:
+            logger.info(f"{controller.STATION_ID} ┃ ⏳ Waiting for STN2 trigger...")
+            while controller.is_running:
+                with self.lock:
+                    if self.mc_a_ready:
+                        self.mc_a_ready = False
+                        break
+                time.sleep(0.1)
+            if not controller.is_running:
+                return
+        else:
+            self._a_first = False
+
+        # EVERY cycle: wait at barrier for the other MC
+        logger.info(f"{controller.STATION_ID} ┃ ⏳ At emit gate — waiting for other MC...")
+        try:
+            self._emit_barrier.wait(timeout=120)
+        except threading.BrokenBarrierError:
+            return
+        logger.info(f"{controller.STATION_ID} ┃ ✅ Gate open — emitting NOW!")
+
+    def wait_b(self, controller):
+        # Subsequent cycles: wait for trigger() from Station 2
+        if not self._b_first:
+            logger.info(f"{controller.STATION_ID} ┃ ⏳ Waiting for STN2 trigger...")
+            while controller.is_running:
+                with self.lock:
+                    if self.mc_b_ready:
+                        self.mc_b_ready = False
+                        break
+                time.sleep(0.1)
+            if not controller.is_running:
+                return
+        else:
+            self._b_first = False
+
+        # EVERY cycle: wait at barrier for the other MC
+        logger.info(f"{controller.STATION_ID} ┃ ⏳ At emit gate — waiting for other MC...")
+        try:
+            self._emit_barrier.wait(timeout=120)
+        except threading.BrokenBarrierError:
+            return
+        logger.info(f"{controller.STATION_ID} ┃ ✅ Gate open — emitting NOW!")
+
+    def trigger(self):
+        with self.lock:
+            self.mc_a_ready = True
+            self.mc_b_ready = True
+
+    def abort(self):
+        """Call during shutdown to unblock any thread stuck at the barrier."""
+        try:
+            self._emit_barrier.abort()
+        except Exception:
+            pass
+
+
+# ═══════════════════════════════════════════════════════════
 # SYNCED STATION 1 — Waits for Station 2 before releasing
 # ═══════════════════════════════════════════════════════════
 
@@ -143,11 +224,15 @@ class SyncedStation1(Station1Controller):
     _setup_mqtt_fault_listener() automatically.
     """
 
-    def __init__(self, modbus_client, mqtt_client=None, downstream_ready=None):
-        super().__init__(modbus_client, mqtt_client=mqtt_client)
+    def __init__(self, modbus_client, mqtt_client=None, downstream_ready=None,
+                 upstream_ready=None, config=None):
+        super().__init__(modbus_client, mqtt_client=mqtt_client, config=config)
         self._downstream_ready = downstream_ready
+        self._upstream_ready = upstream_ready
         if downstream_ready:
             logger.info("   🔗 STN1: Downstream sync ENABLED (waits for Station 2)")
+        if upstream_ready:
+            logger.info("   🔗 STN1: Upstream sync ENABLED (signals Machining A)")
 
     def blade(self, up):
         """
@@ -201,6 +286,91 @@ class SyncedStation1(Station1Controller):
 
         super().blade(up)
 
+    def run(self):
+        """Override: No emitter — bases arrive from Machining Center A."""
+        self.is_running = True
+        self._belt1b_on()
+        self._setup_mqtt_fault_listener()
+
+        try:
+            while self.is_running:
+                cycle_start = time.time()
+
+                # ─── STEP 1: Ready for base from Machining A ───
+                logger.info("═" * 55)
+                logger.info("STEP 1: Waiting for base from Machining A...")
+                self.belt1(True)
+                self.blade(False)
+
+                # Signal Machining A: Station 1 is ready for next base
+                if self._upstream_ready is not None:
+                    self._upstream_ready.set()
+                    logger.info("   📡 Signaled Machining A: STN1 READY!")
+
+                # ─── STEP 2: Wait for Sensor 1 ───
+                logger.info("STEP 2: Waiting for Sensor 1...")
+                if not self._wait_for(
+                    self.read_sensor_1, timeout=120.0,
+                    state_name="wait_sensor_1",
+                ):
+                    if not self.is_running:
+                        break
+                    continue
+
+                logger.info("STEP 2: ✅ Sensor 1 TRIGGERED!")
+                self.blade(True)
+
+                # ─── STEP 3: Wait for Sensor 2 ───
+                logger.info("STEP 3: Waiting for Sensor 2...")
+                if not self._wait_for(
+                    self.read_sensor_2, timeout=30.0,
+                    state_name="wait_sensor_2",
+                ):
+                    if not self.is_running:
+                        break
+                    continue
+
+                logger.info("STEP 3: ✅ Sensor 2 TRIGGERED!")
+                self.belt1(False)
+
+                # ─── STEP 3b: Inspection ───
+                logger.info("STEP 3: 🔍 Inspecting for 3 seconds...")
+                inspection_start = time.time()
+                for countdown in range(3, 0, -1):
+                    logger.info(f"   ⏱️ {countdown} seconds remaining...")
+                    self._wait_seconds(1.0, state_name="inspecting")
+                self.stats.total_inspection_time += time.time() - inspection_start
+                logger.info("STEP 3: ✅ Inspection DONE!")
+
+                # ─── STEP 4: Release to Station 2 ───
+                logger.info("STEP 4: Belt ON (queuing upstream)...")
+                self.belt1(True)
+
+                logger.info("STEP 4: Lowering blade...")
+                self.blade(False) # Will block here if STN2 is not ready, while belt remains running
+                self._wait_seconds(1.0, state_name="blade_lowering")
+
+                # ─── Cycle complete ───
+                cycle_time = time.time() - cycle_start
+                self.stats.products_completed += 1
+                self.stats.add_cycle(cycle_time)
+
+                logger.info(f"✅ Product #{self.stats.products_completed}"
+                            f" INSPECTED! ({cycle_time:.1f}s)")
+
+                if self.faults.has_any_fault:
+                    logger.warning(f"   ⚠️  FAULTS: {self.faults.active_faults}")
+
+                self._publish_mqtt(force=True)
+
+        except KeyboardInterrupt:
+            logger.info("Interrupted by user")
+        finally:
+            self.is_running = False
+            self.all_off()
+            if self._motor_start_time is not None:
+                self._total_motor_runtime += time.time() - self._motor_start_time
+
 
 # ═══════════════════════════════════════════════════════════
 # SYNCED STATION 2 — Waits for Station 3 before releasing
@@ -214,12 +384,17 @@ class SyncedStation2(Station2Controller):
     """
 
     def __init__(self, modbus_client, mqtt_client=None,
-                 upstream_ready=None, downstream_ready=None):
+                 upstream_ready=None, downstream_ready=None,
+                 lid_ready=None, emit_trigger_fn=None, config=None):
         super().__init__(modbus_client, mqtt_client=mqtt_client,
-                         upstream_ready=upstream_ready)
+                         upstream_ready=upstream_ready, config=config)
         self._downstream_ready = downstream_ready
+        self._lid_ready = lid_ready
+        self._emit_trigger_fn = emit_trigger_fn
         if downstream_ready:
             logger.info("   🔗 STN2: Downstream sync ENABLED (waits for Station 3)")
+        if lid_ready:
+            logger.info("   🔗 STN2: Lid sync ENABLED (waits for Machining B)")
 
     def blade(self, up):
         """Override: wait for Station 3 before releasing product."""
@@ -325,11 +500,30 @@ class SyncedStation2(Station2Controller):
                 logger.info("STN2 ┃ STATE 1: ✅ Product arrived!")
                 self.belt(False)
 
-                logger.info("STN2 ┃ Creating PCB lid...")
-                self.emitter(True)
-                self._wait_seconds(self._timing["lid_creation_time"], "s2_creating_lid")
-                self.emitter(False)
-                self._wait_seconds(self._timing["lid_settle_time"], "s2_lid_settle")
+                if self._emit_trigger_fn:
+                    logger.info("STN2 ┃ 📡 Signaling Machining Centers to emit NEXT parts (product at sensor_station)!")
+                    self._emit_trigger_fn()
+
+                # ── Get lid: from Machining B or local emitter ──
+                if self._lid_ready is not None:
+                    logger.info("STN2 ┃ ⏳ Waiting for lid from Machining B...")
+                    wait_start = time.time()
+                    while not self._lid_ready.is_set() and self.is_running:
+                        self._update_simulations(False)
+                        self._fault_tick()
+                        self._publish_mqtt()
+                        time.sleep(0.1)
+                    if not self.is_running:
+                        break
+                    self._lid_ready.clear()
+                    elapsed = time.time() - wait_start
+                    logger.info(f"STN2 ┃ ✅ Lid ready from Machining B! (waited {elapsed:.1f}s)")
+                else:
+                    logger.info("STN2 ┃ Creating PCB lid...")
+                    self.emitter(True)
+                    self._wait_seconds(self._timing["lid_creation_time"], "s2_creating_lid")
+                    self.emitter(False)
+                    self._wait_seconds(self._timing["lid_settle_time"], "s2_lid_settle")
 
                 logger.info("STN2 ┃ STATE 2: P&P ↓ DOWN to lid...")
                 self._pp_phase = "picking"
@@ -388,6 +582,10 @@ class SyncedStation2(Station2Controller):
                     break
                 logger.info("STN2 ┃ ✅ P&P home")
 
+                # Emit trigger already fired at product arrival (sensor_station)
+                # to give MCs maximum time to prepare next parts
+                pass
+
                 logger.info("STN2 ┃ STATE 10: Blade DOWN...")
                 self.blade(False)
                 self._wait_seconds(self._timing["blade_lower_time"], "s2_blade_lower")
@@ -441,9 +639,9 @@ class SyncedStation3(Station3Controller):
     """
 
     def __init__(self, modbus_client, mqtt_client=None,
-                 upstream_ready=None, downstream_ready=None):
+                 upstream_ready=None, downstream_ready=None, config=None):
         super().__init__(modbus_client, mqtt_client=mqtt_client,
-                         upstream_ready=upstream_ready)
+                         upstream_ready=upstream_ready, config=config)
         self._downstream_ready = downstream_ready
         if downstream_ready:
             logger.info("   🔗 STN3: Downstream sync ENABLED (waits for Station 6)")
@@ -513,9 +711,11 @@ class LineStation6(SyncedStation6):
     _station_num = 6
 
     def __init__(self, modbus_client, mqtt_client=None,
-                 upstream_ready_event=None, downstream_ready_event=None):
+                 upstream_ready_event=None, downstream_ready_event=None,
+                 config=None):
         super().__init__(modbus_client, mqtt_client,
-                         upstream_ready_event, downstream_ready_event)
+                         upstream_ready_event, downstream_ready_event,
+                         config=config)
 
         # Fault tracking
         self._active_faults = {}       # {fault_type: severity}
@@ -736,9 +936,11 @@ class LineStation7(SyncedStation7):
     _station_num = 7
 
     def __init__(self, modbus_client, station6_ref=None, mqtt_client=None,
-                 upstream_ready_event=None):
+                 upstream_ready_event=None, config=None,
+                 transfer_sensor_addr=None):
         super().__init__(modbus_client, station6_ref, mqtt_client,
-                         upstream_ready_event)
+                         upstream_ready_event, config=config,
+                         transfer_sensor_addr=transfer_sensor_addr)
 
         # ─── NEW: How long arm stays in divert position ───
         self.PRODUCT_CLEAR_TIME = 6.0   # seconds for product to pass the pivot arm
@@ -1020,12 +1222,14 @@ class LineTransferStation(SyncedTransferStation):
 
     def __init__(self, modbus_client, mqtt_client=None,
                  upstream_ready_event=None,
-                 pallet_ready_event=None, product_placed_event=None):
+                 pallet_ready_event=None, product_placed_event=None,
+                 station_name="Transfer-Line 1", stacker_register=0):
         super().__init__(modbus_client,
                          upstream_ready_event=upstream_ready_event,
-                         station_name="Transfer-Line")
+                         station_name=station_name)
         self.mqtt = mqtt_client
         self._pallet_ready = pallet_ready_event
+        self._stacker_register = stacker_register
         self._product_placed = product_placed_event
 
         # Fault tracking
@@ -1371,11 +1575,11 @@ class LineTransferStation(SyncedTransferStation):
                                    f"jam={fc['pp2_jams']} grab={fc['grab_failures']} "
                                    f"mis={fc['sensor_misreads']}")
 
-                # Wait for stacker crane to return (holding register 0 == 55)
-                logger.info("[TRANSFER] ⏳ Waiting for stacker to return (reg 0 == 55)...")
+                # Wait for stacker crane to return (holding register == 55)
+                logger.info(f"[TRANSFER] ⏳ Waiting for stacker to return (reg {self._stacker_register} == 55)...")
                 while self.running:
                     try:
-                        reg_val = self.modbus.read_holding_register(0)
+                        reg_val = self.modbus.read_holding_register(self._stacker_register)
                         if reg_val == 55:
                             break
                     except Exception:
@@ -1451,22 +1655,27 @@ class LineWarehouse(WarehouseController):
     _station_num = 9
 
     def __init__(self, modbus_client, mqtt_client=None,
-                 pallet_ready_event=None, product_placed_event=None):
+                 pallet_ready_event=None, product_placed_event=None,
+                 io_offset=0, reg_offset=0):
         # Init as integrated, then override addresses
         super().__init__(modbus_client, mqtt_client, integrated=True)
 
-        # Override with CORRECT line addresses
-        self.OUT = dict(LINE_WH_ADDRESSES['OUT'])
-        self.IN = dict(LINE_WH_ADDRESSES['IN'])
-        self.REG = dict(LINE_WH_ADDRESSES['REG'])
+        # Override with CORRECT line addresses (with offset for Line 2)
+        self.OUT = {k: v + io_offset for k, v in LINE_WH_ADDRESSES['OUT'].items()}
+        self.IN  = {k: v + io_offset for k, v in LINE_WH_ADDRESSES['IN'].items()}
+        self.REG = {k: v + reg_offset for k, v in LINE_WH_ADDRESSES['REG'].items()}
 
         # Coordination events
         self._pallet_ready = pallet_ready_event
         self._product_placed = product_placed_event
 
-        # Pallet emitter is on Transfer side (Coil 29)
-        self.TRANSFER_EMITTER = 29
-        self.TRANSFER_ROLLER = 28
+        # Pallet emitter is on Transfer side (Coil 29 / 129)
+        self.TRANSFER_EMITTER = 29 + io_offset
+        self.TRANSFER_ROLLER = 28 + io_offset
+
+        # Loading conveyor and entry sensor (used in _pull_pallet_to_crane)
+        self.LOADING_CONVEYOR = 38 + io_offset
+        self.ENTRY_SENSOR_ADDR = 23 + io_offset
 
         # Timing for timed entry (no entry sensor)
         self.PALLET_EMIT_PULSE = 0.3
@@ -1484,10 +1693,13 @@ class LineWarehouse(WarehouseController):
         }
         self._fault_lock = threading.Lock()
 
-        logger.info("WH: 🔗 LINE mode — correct addresses:")
+        line_label = "Line 2" if io_offset else "Line 1"
+        logger.info(f"WH: 🔗 LINE mode ({line_label}) — addresses:")
         logger.info(f"     Outputs: {self.OUT}")
         logger.info(f"     Inputs:  {self.IN}")
         logger.info(f"     Register: {self.REG}")
+        logger.info(f"     Transfer: emitter={self.TRANSFER_EMITTER} roller={self.TRANSFER_ROLLER}")
+        logger.info(f"     Loading conveyor={self.LOADING_CONVEYOR} entry_sensor={self.ENTRY_SENSOR_ADDR}")
 
     # ── Compatibility ──
 
@@ -1682,20 +1894,20 @@ class LineWarehouse(WarehouseController):
     def _pull_pallet_to_crane(self):
         """Pull pallet+product from Transfer area into warehouse crane."""
         logger.info("WH ┃ Pulling pallet into warehouse...")
-        # Transfer roller (coil 28) + Warehouse roller (coil 39) + Loading conveyor 1 (coil 38) all ON
+        # Transfer roller + Warehouse roller + Loading conveyor all ON
         self.modbus.write_output(self.TRANSFER_ROLLER, True)
         self.modbus.write_output(self.OUT['entry_roller'], True)
-        self.modbus.write_output(38, True)   # Loading Conveyor 1 ON
+        self.modbus.write_output(self.LOADING_CONVEYOR, True)
 
-        # Wait until sensor at input 23 detects the product on loading conveyor
-        logger.info("WH ┃ Waiting for product on loading conveyor (input 23)...")
+        # Wait until entry sensor detects the product on loading conveyor
+        logger.info(f"WH ┃ Waiting for product on loading conveyor (input {self.ENTRY_SENSOR_ADDR})...")
         start = time.time()
         while self.running:
-            inputs = self.modbus.read_inputs(23, 1)
+            inputs = self.modbus.read_inputs(self.ENTRY_SENSOR_ADDR, 1)
             if inputs and inputs[0]:
                 logger.info("WH ┃ Product detected on loading conveyor ✅")
                 # Stop ALL conveyors IMMEDIATELY to prevent overshooting
-                self.modbus.write_output(38, False)
+                self.modbus.write_output(self.LOADING_CONVEYOR, False)
                 self.modbus.write_output(self.TRANSFER_ROLLER, False)
                 self.modbus.write_output(self.OUT['entry_roller'], False)
                 break
@@ -1704,7 +1916,7 @@ class LineWarehouse(WarehouseController):
                 break
             time.sleep(0.01)
 
-        logger.info("WH ┃ Loading conveyor 1 (coil 38) STOPPED ✅")
+        logger.info(f"WH ┃ Loading conveyor (coil {self.LOADING_CONVEYOR}) STOPPED ✅")
         self._wait_seconds(self.TIMING['load_settle'], "settle")
         logger.info("WH ┃ Pallet on crane platform ✅")
 
@@ -1903,19 +2115,27 @@ class LineWarehouse(WarehouseController):
 # FAULT INJECTION MENU
 # ═══════════════════════════════════════════════════════════
 
-def fault_menu(station1, station2, station3, station6, station7, transfer, warehouse):
-    """Combined fault injection for all seven stations + Transfer + Warehouse — ALL REAL EFFECTS."""
+def fault_menu(station1, station2, station3, station6, station7, transfer, warehouse,
+               mach_a=None, mach_b=None, mc_sync=None):
+    """Combined fault injection for all stations — ALL REAL EFFECTS."""
     print()
     print("  ┌─────────────────────────────────────────────────────────────────────────────────┐")
     print("  │  📺 TV ASSEMBLY LINE — Fault Injection ⚡  (ALL REAL EFFECTS)                    │")
     print("  │                                                                                 │")
-    print("  │  STATION 1 (Chassis):   STATION 2 (PCB):     STATION 3 (Panel):                 │")
-    print("  │  1f1 [s] = Overheat     2f1 [s] = Overheat   3f1 [s] = Overheat                │")
-    print("  │  1f2 [s] = Vibration    2f3 [s] = Power      3f3 [s] = Power                   │")
-    print("  │  1f3 [s] = Power        2f4 [s] = Belt Slip  3f4 [s] = Belt Slip                │")
-    print("  │  1f4 [s] = Belt Slip    2f5 [s] = Sensor     3f5 [s] = Sensor                  │")
-    print("  │  1f5 [s] = Sensor       2f6 [s] = Gripper ⚡  3f6 [s] = Pos Jam                  │")
-    print("  │                         2f7 [s] = P&P Jam                                      │")
+    print("  │  MACHINING A (Base):   MACHINING B (Lid):                                       │")
+    print("  │  Af1 [s] = Overheat    Bf1 [s] = Overheat                                      │")
+    print("  │  Af3 [s] = Power       Bf3 [s] = Power                                         │")
+    print("  │  Af4 [s] = CNC Jam 🔧  Bf4 [s] = CNC Jam 🔧                                    │")
+    print("  │  Af5 [s] = Sensor      Bf5 [s] = Sensor                                        │")
+    print("  │  Af6 [s] = Material    Bf6 [s] = Material                                      │")
+    print("  │                                                                                 │")
+    print("  │  STATION 1 (Inspect):  STATION 2 (Assembly):  STATION 3 (Panel):                │")
+    print("  │  1f1 [s] = Overheat    2f1 [s] = Overheat     3f1 [s] = Overheat               │")
+    print("  │  1f2 [s] = Vibration   2f3 [s] = Power        3f3 [s] = Power                  │")
+    print("  │  1f3 [s] = Power       2f4 [s] = Belt Slip    3f4 [s] = Belt Slip               │")
+    print("  │  1f4 [s] = Belt Slip   2f5 [s] = Sensor       3f5 [s] = Sensor                 │")
+    print("  │  1f5 [s] = Sensor      2f6 [s] = Gripper ⚡    3f6 [s] = Pos Jam                 │")
+    print("  │                        2f7 [s] = P&P Jam                                       │")
     print("  │                                                                                 │")
     print("  │  STATION 6 (QC):                  STATION 7 (Sorting):                          │")
     print("  │  6f1 [s] = Overheat               7f1 [s] = Overheat                            │")
@@ -1934,9 +2154,8 @@ def fault_menu(station1, station2, station3, station6, station7, transfer, wareh
     print("  │  8f7 [s] = Grab Fail ✋                                                          │")
     print("  │                                                                                 │")
     print("  │  fc = Clear ALL    st = Status    q = Quit                                      │")
-    print("  │  1fe/2fe/3fe/6fe/7fe/8fe/9fe = Effects                                          │")
-    print("  │  1rp/2rp/3rp/6rp/7rp/8rp/9rp = Reports                                        │")
-    print("  │  [s] = optional severity 1-5 (default 3)  Example: 8f6 5                        │")
+    print("  │  Arp/Brp/1rp/.../9rp = Reports   Afe/Bfe/1fe/.../9fe = Effects                  │")
+    print("  │  [s] = optional severity 1-5 (default 3)  Example: Af4 5                        │")
     print("  └─────────────────────────────────────────────────────────────────────────────────┘")
     print()
 
@@ -1954,18 +2173,49 @@ def fault_menu(station1, station2, station3, station6, station7, transfer, wareh
                    "5": "sensor_drift", "6": "pp2_jam", "7": "grab_failure"}
     stn9_faults = {"1": "overheat", "3": "power", "4": "crane_drift",
                    "5": "sensor_drift", "6": "fork_jam"}
+    mach_faults = {"1": "overheat", "3": "power", "4": "cnc_jam",
+                   "5": "sensor_drift", "6": "material_error"}
 
-    while (station1.is_running or station2.is_running
-           or station3.is_running or station6.is_running
-           or station7.is_running or transfer.is_running
-           or warehouse.is_running):
+    all_running = [station1, station2, station3, station6, station7, transfer, warehouse]
+    if mach_a:
+        all_running.append(mach_a)
+    if mach_b:
+        all_running.append(mach_b)
+
+    while any(s.is_running for s in all_running):
         try:
             cmd = input().strip().lower()
             if not cmd:
                 continue
 
+            # ── Machining A faults ──
+            if cmd.startswith("af") and len(cmd) >= 3 and mach_a:
+                n = cmd[2]
+                parts = cmd.split()
+                sev = int(parts[1]) if len(parts) > 1 else 3
+                if n == "e":
+                    fc = mach_a._fault_counters
+                    print(f"\n  ⚡ MC-A: cnc_jam={fc['cnc_jams']} mat_err={fc['material_errors']} "
+                          f"brown={fc['brownouts']} estop={fc['emergency_stops']} "
+                          f"mis={fc['sensor_misreads']}\n")
+                elif n in mach_faults:
+                    mach_a.inject_fault(mach_faults[n], sev)
+
+            # ── Machining B faults ──
+            elif cmd.startswith("bf") and len(cmd) >= 3 and mach_b:
+                n = cmd[2]
+                parts = cmd.split()
+                sev = int(parts[1]) if len(parts) > 1 else 3
+                if n == "e":
+                    fc = mach_b._fault_counters
+                    print(f"\n  ⚡ MC-B: cnc_jam={fc['cnc_jams']} mat_err={fc['material_errors']} "
+                          f"brown={fc['brownouts']} estop={fc['emergency_stops']} "
+                          f"mis={fc['sensor_misreads']}\n")
+                elif n in mach_faults:
+                    mach_b.inject_fault(mach_faults[n], sev)
+
             # ── Station 1 faults ──
-            if cmd.startswith("1f") and len(cmd) >= 3:
+            elif cmd.startswith("1f") and len(cmd) >= 3:
                 n = cmd[2]
                 parts = cmd.split()
                 sev = int(parts[1]) if len(parts) > 1 else 3
@@ -2065,6 +2315,10 @@ def fault_menu(station1, station2, station3, station6, station7, transfer, wareh
                 station7.clear_fault("all")
                 transfer.clear_fault("all")
                 warehouse.clear_fault("all")
+                if mach_a:
+                    mach_a.clear_fault("all")
+                if mach_b:
+                    mach_b.clear_fault("all")
                 print("  ✅ All faults cleared on all stations")
 
             elif cmd == "st":
@@ -2076,6 +2330,16 @@ def fault_menu(station1, station2, station3, station6, station7, transfer, wareh
                 s8 = transfer.get_status()
                 s9 = warehouse.get_status()
                 print()
+                if mach_a:
+                    sa = mach_a.get_status()
+                    print(f"  MC-A: {sa['state']:20s}  done={sa['counters']['products_completed']}"
+                          f"  progress={sa['machining']['progress']:.0f}%"
+                          f"  faults={sa['faults']['has_fault']}")
+                if mach_b:
+                    sb = mach_b.get_status()
+                    print(f"  MC-B: {sb['state']:20s}  done={sb['counters']['products_completed']}"
+                          f"  progress={sb['machining']['progress']:.0f}%"
+                          f"  faults={sb['faults']['has_fault']}")
                 print(f"  STN1: {s1['state']:20s}  done={s1['counters']['products_completed']}"
                       f"  faults={s1['faults']['has_fault']}"
                       f"  emergency={s1['emergency_active']}")
@@ -2104,6 +2368,10 @@ def fault_menu(station1, station2, station3, station6, station7, transfer, wareh
                       f"  next={s9['warehouse']['next_cell']}")
                 print()
 
+            elif cmd == "arp" and mach_a:
+                print(mach_a.get_full_report())
+            elif cmd == "brp" and mach_b:
+                print(mach_b.get_full_report())
             elif cmd == "1rp":
                 print(station1.get_full_report())
             elif cmd == "2rp":
@@ -2120,6 +2388,12 @@ def fault_menu(station1, station2, station3, station6, station7, transfer, wareh
                 print(warehouse.get_full_report())
 
             elif cmd == "q":
+                if mc_sync:
+                    mc_sync.abort()
+                if mach_a:
+                    mach_a.is_running = False
+                if mach_b:
+                    mach_b.is_running = False
                 station1.is_running = False
                 station2.is_running = False
                 station3.is_running = False
@@ -2228,6 +2502,23 @@ def main():
     station7_ready = threading.Event()   # Stn7 → Stn6
     pallet_ready = threading.Event()     # Warehouse → Transfer
     product_placed = threading.Event()   # Transfer → Warehouse
+    lid_ready = threading.Event()        # Machining B → Station 2
+    
+    mc_sync = MachiningSynchronizer()    # Sync emitters to STN2 Input 3
+
+    # ─── Create Machining Controllers ───
+    mach_a = MachiningBaseController(
+        modbus,
+        mqtt_client=mqtt,
+        wait_to_emit_fn=mc_sync.wait_a,
+    )
+
+    mach_b = MachiningLidController(
+        modbus,
+        mqtt_client=mqtt,
+        lid_ready_event=lid_ready,
+        wait_to_emit_fn=mc_sync.wait_b,
+    )
 
     # ─── Create controllers ───
     station1 = SyncedStation1(
@@ -2241,6 +2532,8 @@ def main():
         mqtt_client=mqtt,
         upstream_ready=station2_ready,
         downstream_ready=station3_ready,
+        lid_ready=lid_ready,
+        emit_trigger_fn=mc_sync.trigger,
     )
 
     station3 = SyncedStation3(
@@ -2280,6 +2573,9 @@ def main():
 
     print()
     print("  🔗 Synchronization Chain:")
+    print("     Machining A produces base ──► Station 1 inspects")
+    print("     Station 1 signals 'ready' ──► Machining A sends next")
+    print("     Machining B produces lid  ──► Station 2 P&P picks")
     print("     Station 7 signals 'ready' ──► Station 6 releases product")
     print("     Station 6 signals 'ready' ──► Station 3 accepts product")
     print("     Station 3 signals 'ready' ──► Station 2 releases product")
@@ -2288,10 +2584,9 @@ def main():
     print("     Warehouse emits pallet ──► Transfer places ──► Warehouse stores")
     print()
     print("  📦 Product Flow:")
-    print("     STN1 (Chassis) ──► STN2 (PCB) ──► STN3 (Display) ──► "
-          "STN6 (QC) ──► STN7 (Sort)")
-    print("     GOOD ──► Transfer (P&P to pallet) ──► Warehouse (Stacker Crane)")
-    print("     REJECT ──► Remover")
+    print("     MC-A (Base) ──► STN1 (Inspect) ──► STN2 (Assembly) ──► STN3 ──► ")
+    print("     STN6 (QC) ──► STN7 (Sort) ──► Transfer ──► Warehouse")
+    print("     MC-B (Lid) ──► STN2 P&P picks lid ──► places on base")
     print()
     print("  📷 Vision Sensor: EXPECTED_VALUE = 5 (Green Product Lid = assembled)")
     print()
@@ -2304,6 +2599,7 @@ def main():
     menu_thread = threading.Thread(
         target=fault_menu,
         args=(station1, station2, station3, station6, station7, transfer, warehouse),
+        kwargs={"mach_a": mach_a, "mach_b": mach_b, "mc_sync": mc_sync},
         daemon=True,
     )
     menu_thread.start()
@@ -2388,7 +2684,7 @@ def main():
     else:
         logger.warning("⚠️ Station 2 not ready in 15s, starting anyway...")
 
-    # ─── Start Station 1 (most upstream — starts last) ───
+    # ─── Start Station 1 ───
     thread1 = threading.Thread(
         target=station1.run,
         daemon=True,
@@ -2397,18 +2693,40 @@ def main():
     thread1.start()
     logger.info("✅ Station 1 started!")
 
+    # ─── Start Machining Center B (Lid Producer) ───
+    thread_mc_b = threading.Thread(
+        target=mach_b.run,
+        daemon=True,
+        name="MachiningB",
+    )
+    thread_mc_b.start()
+    logger.info("✅ Machining Center B (Green Lid Producer) started!")
+
+    # ─── Start Machining Center A (Base Producer) ───
+    thread_mc_a = threading.Thread(
+        target=mach_a.run,
+        daemon=True,
+        name="MachiningA",
+    )
+    thread_mc_a.start()
+    logger.info("✅ Machining Center A (Blue Base Producer) started!")
+
     logger.info("")
-    logger.info("🏭 All 7 stations + Transfer + Warehouse running!")
-    logger.info("📦 STN1 → STN2 → STN3 → STN6 → STN7 → Transfer → Warehouse")
+    logger.info("🏭 All stations + Machining Centers + Transfer + Warehouse running!")
+    logger.info("📦 MC-A → STN1 → STN2 → STN3 → STN6 → STN7 → Transfer → Warehouse")
+    logger.info("📦 MC-B → STN2 (P&P picks lid)")
     logger.info("")
 
     # ─── Wait for all threads ───
-    all_threads = [thread1, thread2, thread3, thread6, thread7, thread_xfer, thread_wh]
+    all_threads = [thread_mc_a, thread_mc_b, thread1, thread2, thread3,
+                   thread6, thread7, thread_xfer, thread_wh]
     try:
         while any(t.is_alive() for t in all_threads):
-            # Check if warehouse is full → stop the line
             if warehouse.state == "full":
                 logger.warning("🛑 WAREHOUSE FULL — stopping all stations!")
+                mc_sync.abort()
+                mach_a.is_running = False
+                mach_b.is_running = False
                 station1.is_running = False
                 station2.is_running = False
                 station3.is_running = False
@@ -2421,6 +2739,9 @@ def main():
     except KeyboardInterrupt:
         print()
         print("  Stopping all stations...")
+        mc_sync.abort()
+        mach_a.is_running = False
+        mach_b.is_running = False
         station1.is_running = False
         station2.is_running = False
         station3.is_running = False
@@ -2438,6 +2759,8 @@ def main():
     print("═" * 70)
     print("  📊 FINAL REPORTS")
     print("═" * 70)
+    print(mach_a.get_full_report())
+    print(mach_b.get_full_report())
     print(station1.get_full_report())
     print(station2.get_full_report())
     print(station3.get_full_report())
