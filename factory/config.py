@@ -153,6 +153,74 @@ STATION2_CONFIG = {
     },
 }
 
+# =============================================================================
+# STATION 4 — Wiring Connection (Coils 14-15, Inputs 10-11, Stack light 22-23)
+# =============================================================================
+STATION4_CONFIG = {
+    "name": "Station 4 — Wiring Connection",
+    "id": "station_4",
+    "io": {
+        "belt":           {"address": 14, "type": "output"},
+        "stop_blade":     {"address": 15, "type": "output"},
+        "light_green":    {"address": 22, "type": "output"},
+        "light_red":      {"address": 23, "type": "output"},
+        "sensor_entry":   {"address": 10, "type": "input"},
+        "sensor_station": {"address": 11, "type": "input"},
+    },
+    "timing": {
+        "wiring_time":        3.0,
+        "settle_time":        0.3,
+        "exit_time":          1.0,
+        "product_timeout":    120.0,
+        "sensor_clear_timeout": 30.0,
+        "debounce_time":      0.3,
+    },
+    "simulation": {
+        "normal_temperature": 24.0,
+        "temperature_noise":  0.3,
+        "normal_vibration":   3.0,
+        "vibration_noise":    0.5,
+        "belt_motor_power":   0.7,
+    },
+}
+
+# =============================================================================
+# STATION 5 — Back Cover Assembly (Coils 16-18, Inputs 12-15, Stack light 24-25)
+# =============================================================================
+STATION5_CONFIG = {
+    "name": "Station 5 — Back Cover Assembly",
+    "id": "station_5",
+    "io": {
+        "belt":             {"address": 16, "type": "output"},
+        "stop_blade":       {"address": 17, "type": "output"},
+        "pusher":           {"address": 18, "type": "output"},
+        "light_green":      {"address": 24, "type": "output"},
+        "light_red":        {"address": 25, "type": "output"},
+        "sensor_entry":     {"address": 12, "type": "input"},
+        "sensor_station":   {"address": 13, "type": "input"},
+        "pusher_extended":  {"address": 14, "type": "input"},
+        "pusher_retracted": {"address": 15, "type": "input"},
+    },
+    "timing": {
+        "pre_push_wait":        1.5,
+        "push_hold_time":       2.5,
+        "retract_settle_time":  0.5,
+        "exit_time":            1.0,
+        "product_timeout":      120.0,
+        "mechanical_timeout":   5.0,
+        "sensor_clear_timeout": 30.0,
+        "debounce_time":        0.3,
+        "settle_time":          0.3,
+    },
+    "simulation": {
+        "normal_temperature": 26.0,
+        "temperature_noise":  0.3,
+        "normal_vibration":   4.0,
+        "vibration_noise":    0.8,
+        "belt_motor_power":   0.9,
+    },
+}
+
 
 # =============================================================================
 # THRESHOLDS FOR AI MONITORING

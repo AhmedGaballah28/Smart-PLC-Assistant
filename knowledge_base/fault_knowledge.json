@@ -1,0 +1,114 @@
+[
+  {
+    "id": "stn1_overheat_001",
+    "title": "Station 1 — Belt Motor Overheat",
+    "station": "station_1",
+    "fault_type": "overheat",
+    "category": "thermal",
+    "content": "Root cause: Belt motor winding insulation class F degradation from sustained high temperature. Dust buildup on heatsink increases thermal resistance by 30-50%. Ambient temperature >40°C in enclosed cabinet accelerates degradation.\n\nSymptoms: Temperature sensor readings above 50°C. Belt speed drops as motor deratesautomatically. Possible brownouts if thermal protection triggers.\n\nRepair: (1) Clean motor vents and heatsink — expected temp reduction 8-12°C. (2) Verify ambient ventilation is adequate. (3) Reduce inspection dwell time by 15% if symptom persists. (4) Replace motor windings if insulation resistance <1 MΩ.\n\nPrevention: Monthly thermal inspection. Install temperature logging. Check fan operation weekly."
+  },
+  {
+    "id": "stn1_vibration_001",
+    "title": "Station 1 — Belt Roller Vibration Anomaly",
+    "station": "station_1",
+    "fault_type": "vibration",
+    "category": "mechanical",
+    "content": "Root cause: Belt roller bearing inner race spalling (BPFO defect at 3.2x shaft speed). Dynamic imbalance of drive pulley >5g·mm. Shaft misalignment >0.05mm.\n\nSymptoms: Vibration sensor >25 mm/s RMS. Blade chatters intermittently. Product positioning errors at station sensor.\n\nRepair: (1) Apply grease to bearings — if vibration >35 mm/s, full replacement is needed. (2) Check belt tension and pulley alignment. (3) Balance drive pulley if runout >0.1mm.\n\nPrevention: Vibration trending — schedule bearing replacement at 8000 hours MTBF."
+  },
+  {
+    "id": "stn1_belt_slip_001",
+    "title": "Station 1 — Belt Slippage",
+    "station": "station_1",
+    "fault_type": "belt_slip",
+    "category": "mechanical",
+    "content": "Root cause: Belt surface glazing (friction coefficient drops from 0.35 to 0.20). Tension spring fatigue — free length increased >10%. Drive pulley lagging rubber hardened (Shore A >80 vs spec 60).\n\nSymptoms: Product moves slower than expected. Belt stutters visible in Factory I/O. Cycle times increase.\n\nRepair: (1) Clean belt surface with isopropyl alcohol. (2) Adjust tensioner to restore spec tension. (3) Replace lagging rubber if hardness out of spec. (4) Replace belt if glazing is extensive.\n\nPrevention: Belt inspection every 6000 hours. Tension check monthly."
+  },
+  {
+    "id": "stn2_gripper_001",
+    "title": "Station 2 — PCB Gripper (Vacuum Cup) Failure",
+    "station": "station_2",
+    "fault_type": "gripper",
+    "category": "pneumatic",
+    "content": "Root cause: Vacuum cup Shore A hardness drop from 55 to 40 after 500k cycles. Cup lip permanent deformation >0.5mm. Venturi orifice wear reduces vacuum flow 25%.\n\nSymptoms: Pick & Place drops lid during transfer. Item detected sensor does not confirm grip. Assembly failure at Station 2 output.\n\nRepair: (1) Replace vacuum cup — 30 min downtime. (2) Clean venturi orifice. (3) Check vacuum generator flow rate. (4) Inspect cup mounting surface for flatness.\n\nPrevention: Cup replacement every 3000 hours. Weekly vacuum level check."
+  },
+  {
+    "id": "stn2_pp_jam_001",
+    "title": "Station 2 — Pick & Place Axis Jam",
+    "station": "station_2",
+    "fault_type": "pp_jam",
+    "category": "mechanical",
+    "content": "Root cause: Linear guide ball screw backlash >0.1mm from wear. Guide rail lubrication interval exceeded — grease thickening. Particulate contamination in ball nut from machining chips.\n\nSymptoms: P&P axis does not complete movement within timeout. Moving X/Z sensors remain active. Cycle time increases significantly.\n\nRepair: (1) Lubricate guide rails and ball screw — use specified grease (ISO VG 150). (2) Check backlash with dial indicator. (3) Clean ball nut if contaminated. (4) Replace ball screw if backlash >0.2mm.\n\nPrevention: Lubrication every 5000 hours. Clean ball nut quarterly."
+  },
+  {
+    "id": "stn3_positioner_jam_001",
+    "title": "Station 3 — Positioning Bar Jam",
+    "station": "station_3",
+    "fault_type": "positioner_jam",
+    "category": "pneumatic",
+    "content": "Root cause: Cylinder rod seal extrusion (O-ring compression set). Operating pressure below 4 bar. Cylinder rod contamination causing increased friction.\n\nSymptoms: Clamped sensor does not confirm within mechanical timeout. Bar raise/lower takes longer than normal. Cycle time increases by 30-50%.\n\nRepair: (1) Check pneumatic pressure — minimum 5.5 bar required. (2) Clean cylinder rod. (3) Replace O-ring seals if extruded. (4) Check flow control valve settings.\n\nPrevention: Pneumatic system inspection every 15000 hours. Replace seals proactively at 8 years."
+  },
+  {
+    "id": "stn4_wiring_001",
+    "title": "Station 4 — Wiring Connection Stop Blade Fault",
+    "station": "station_4",
+    "fault_type": "belt_slip",
+    "category": "mechanical",
+    "content": "Root cause: Station 4 is a timed stop station for simulated wiring harness installation. The main failure modes are belt slippage preventing proper product positioning at the stop blade, and sensor drift causing false product detection.\n\nSymptoms: Product does not reach stop blade position. Wiring timer starts before product is fully stopped. Cycle time deviation.\n\nRepair: (1) Check belt tension and surface condition. (2) Verify stop blade actuation full stroke. (3) Clean entry and station sensors.\n\nPrevention: Weekly sensor cleaning. Belt inspection monthly."
+  },
+  {
+    "id": "stn5_pusher_jam_001",
+    "title": "Station 5 — Back Cover Pusher Jam",
+    "station": "station_5",
+    "fault_type": "pusher_jam",
+    "category": "pneumatic",
+    "content": "Root cause: Pusher cylinder rod seal failure causing pneumatic leak. Operating pressure below 4 bar. Cylinder rod side-load from misaligned back cover causing binding.\n\nSymptoms: Pusher extended sensor does not confirm. Pusher retracted sensor does not confirm. Press cycle timeout. Back cover not fully seated on product.\n\nRepair: (1) Check pneumatic supply pressure (min 5 bar). (2) Verify pusher cylinder alignment — check for side-load. (3) Replace cylinder rod seals. (4) Check extended/retracted limit switch positions.\n\nPrevention: Pneumatic maintenance per ISO 4414. Cylinder seal replacement every 10000 cycles."
+  },
+  {
+    "id": "stn6_vision_001",
+    "title": "Station 6 — Vision Sensor Error",
+    "station": "station_6",
+    "fault_type": "vision_error",
+    "category": "sensing",
+    "content": "Root cause: Camera CCD hot pixel degradation. Lens contamination (oil mist, cutting fluid aerosol). Backlight LED driver PWM fault causing flicker. CPU thermal throttling at >85°C die temperature.\n\nSymptoms: Vision sensor returns wrong product type code. False PASS or FAIL results. Increased reject rate or good parts going to reject bin.\n\nRepair: (1) Clean camera lens with appropriate solvent and microfibre. (2) Verify LED backlight operation. (3) Check ambient lighting — no direct sunlight or reflections. (4) Recalibrate vision sensor with known-good reference parts. (5) Check CCD temperature with thermal camera.\n\nPrevention: Weekly lens cleaning. Annual CCD calibration verification."
+  },
+  {
+    "id": "stn7_sorter_jam_001",
+    "title": "Station 7 — Pivot Arm Sorter Jam",
+    "station": "station_7",
+    "fault_type": "sorter_jam",
+    "category": "mechanical",
+    "content": "Root cause: Pivot bearing seizure from grease breakdown (operating temp >60°C). Pneumatic 5/2 valve spool sticking from moisture or contamination.\n\nSymptoms: Sorter arm does not move to commanded position. Products going to wrong bin. Good rate drops significantly.\n\nRepair: (1) Check pneumatic supply to sorter valve. (2) Cycle valve manually to check for sticking. (3) Replace valve if spool is contaminated. (4) Inspect pivot bearing — lubricate or replace. (5) Check arm physical obstructions.\n\nPrevention: Annual valve replacement. Bearing grease every 12 months. Clean compressed air supply — install coalescing filter."
+  },
+  {
+    "id": "general_power_brownout_001",
+    "title": "All Stations — Power Supply Brownout",
+    "station": "all",
+    "fault_type": "power",
+    "category": "electrical",
+    "content": "Root cause: 24VDC PSU output ripple >5% from filter capacitor ESR increase. Contactor auxiliary contact bounce >5ms. Loose wire terminal on DIN rail (torque <0.5Nm). Mains voltage fluctuation ±10% outside IEC 61000-4-11.\n\nSymptoms: Belt turns off briefly (0.3-0.8s). Actuators de-energise momentarily. Factory I/O shows coil state changes not commanded by PLC.\n\nRepair: (1) Check PSU output with oscilloscope — ripple must be <200mV. (2) Inspect all DIN rail terminal torques (0.5-0.8 Nm). (3) Replace PSU if capacitors are aged. (4) Install UPS for critical stations.\n\nPrevention: PSU replacement every 7-10 years or 50000 hours. Terminal torque check annually."
+  },
+  {
+    "id": "general_sensor_drift_001",
+    "title": "All Stations — Diffuse Sensor Drift",
+    "station": "all",
+    "fault_type": "sensor_drift",
+    "category": "sensing",
+    "content": "Root cause: LED emitter degradation (luminous flux -20% after 50k hours). Lens contamination from dust, oil mist. Background suppression reference shift from temperature changes. EMI from variable frequency drives coupling into unshielded cables.\n\nSymptoms: False product detections. Missed product arrivals. Intermittent sensor output. Station timeout or deadlock.\n\nRepair: (1) Clean sensor lens with dry compressed air then isopropyl wipe. (2) Verify sensing range — hold calibration target at operating distance and check output. (3) Replace sensor if LED output is degraded below threshold. (4) Check cable shielding continuity.\n\nPrevention: Sensor cleaning monthly. Calibration check quarterly. Sensor replacement at 50000 hours or 5 years."
+  },
+  {
+    "id": "warehouse_crane_drift_001",
+    "title": "Warehouse — Stacker Crane Position Drift",
+    "station": "warehouse",
+    "fault_type": "crane_drift",
+    "category": "positioning",
+    "content": "Root cause: Absolute encoder battery backup voltage <2.8V causing position loss on power cycle. Encoder glass disk contamination. Resolver coupling set screw loosening from vibration.\n\nSymptoms: Crane stores to wrong cell. Retrieval misses cell position. Position register value drifts from expected.\n\nRepair: (1) Replace encoder battery (typically CR2032). (2) Re-home crane to cell 55 (rest position) and verify register. (3) Run calibration cycle through all 54 cells. (4) Check resolver coupling torque.\n\nPrevention: Battery replacement every 3 years. Encoder calibration at annual maintenance."
+  },
+  {
+    "id": "oee_analysis_001",
+    "title": "OEE Analysis — Production Line Performance",
+    "station": "all",
+    "fault_type": "performance",
+    "category": "analytics",
+    "content": "OEE (Overall Equipment Effectiveness) = Availability × Performance × Quality.\n\nTarget values for this TV assembly line:\n- Availability: >90% (downtime <10% of schedule)\n- Performance: >85% (actual rate vs ideal rate)\n- Quality: >95% (pass rate at Station 6)\n- Target OEE: >72.7% (world-class)\n\nCommon OEE losses:\n1. Equipment Failure (Availability): Motor faults, sensor failures, jams\n2. Setup & Adjustment (Availability): Changeovers, tool changes\n3. Minor Stoppages (Performance): Sensor misdetects causing cycle pauses\n4. Reduced Speed (Performance): Belt slip, thermal derating\n5. Process Defects (Quality): Vision sensor errors, assembly failures\n6. Startup Rejects (Quality): Products after restart before calibration\n\nImprovement actions: Implement predictive maintenance on bearings and belts. Add automatic sensor cleaning cycles. Use run_line.py fault injection to test recovery procedures."
+  }
+]

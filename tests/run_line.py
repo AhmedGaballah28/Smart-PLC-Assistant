@@ -57,6 +57,8 @@ from factory.modbus_client import FactoryModbusClient
 from factory.stations.station1 import Station1Controller
 from factory.stations.station2 import Station2Controller
 from factory.stations.station3 import Station3Controller
+from factory.stations.station4 import Station4Controller
+from factory.stations.station5 import Station5Controller
 from factory.stations.station6 import Station6, SyncedStation6, VISION_ITEMS
 from factory.stations.station7 import Station7, SyncedStation7
 from factory.stations.transfer import TransferStation, SyncedTransferStation
@@ -118,14 +120,16 @@ class ThreadSafeModbus:
 
 
 # ═══════════════════════════════════════════════════════════
-# TRANSITION BELT ADDRESSES
+# TRANSITION BELT ADDRESSES (Guessed based on gaps in Modbus coils)
 # ═══════════════════════════════════════════════════════════
 
 BELT_1B = 1      # Transition belt: Station 1 → Station 2
 BELT_2B = 10     # Transition belt: Station 2 → Station 3
-BELT_3B = 14     # Transition belt: Station 3 → Station 6
-BELT_4B = 20     # Transition belt: Station 6 → Station 7
-BELT_5B = 27     # Transition belt: Station 7 → Transfer/Warehouse
+BELT_3B = 13     # Transition belt: Station 3 → Station 4
+BELT_4B = 15     # Transition belt: Station 4 → Station 5
+BELT_5B = 19     # Transition belt: Station 5 → Station 6
+BELT_6B = 26     # Transition belt: Station 6 → Station 7
+BELT_7B = 33     # Transition belt: Station 7 → Transfer/Warehouse
 
 
 # ═══════════════════════════════════════════════════════════
@@ -696,9 +700,55 @@ class SyncedStation3(Station3Controller):
                 logger.info(f"   ✅ STN3: Station 6 READY! (waited {elapsed:.1f}s)")
                 logger.info("")
 
-        # Now signal upstream (Station 2) that we're ready
+        # Now signal upstream that we're ready
         super()._signal_ready()
 
+
+# ═══════════════════════════════════════════════════════════
+# SYNCED STATION 4 — Waits for Station 5 before releasing
+# ═══════════════════════════════════════════════════════════
+
+class SyncedStation4(Station4Controller):
+    """Station 4 with downstream synchronization to Station 5."""
+    def __init__(self, modbus_client, mqtt_client=None, upstream_ready=None, downstream_ready=None, config=None):
+        super().__init__(modbus_client, mqtt_client=mqtt_client, upstream_ready=upstream_ready, config=config)
+        self._downstream_ready = downstream_ready
+
+    def blade(self, up):
+        is_releasing = (not up) and self._intended.get("stop_blade", False)
+        if is_releasing and self._downstream_ready is not None:
+            self.state = "wait_downstream"
+            while not self._downstream_ready.is_set() and self.is_running:
+                self._update_simulations(self._intended.get("belt", False) and not self._fault_override_active)
+                self._fault_tick()
+                self._publish_mqtt()
+                time.sleep(0.1)
+            if self.is_running:
+                self._downstream_ready.clear()
+        super().blade(up)
+
+
+# ═══════════════════════════════════════════════════════════
+# SYNCED STATION 5 — Waits for Station 6 before releasing
+# ═══════════════════════════════════════════════════════════
+
+class SyncedStation5(Station5Controller):
+    """Station 5 with downstream synchronization to Station 6."""
+    def __init__(self, modbus_client, mqtt_client=None, upstream_ready=None, downstream_ready=None, config=None):
+        super().__init__(modbus_client, mqtt_client=mqtt_client, upstream_ready=upstream_ready, config=config)
+        self._downstream_ready = downstream_ready
+
+    def _signal_ready(self):
+        if self._downstream_ready is not None:
+            self.state = "wait_downstream"
+            while not self._downstream_ready.is_set() and self.is_running:
+                self._update_simulations(self._intended.get("belt", False) and not self._fault_override_active)
+                self._fault_tick()
+                self._publish_mqtt()
+                time.sleep(0.1)
+            if self.is_running:
+                self._downstream_ready.clear()
+        super()._signal_ready()
 
 # ═══════════════════════════════════════════════════════════
 # LINE STATION 6 — Real fault injection + line integration
@@ -2498,7 +2548,9 @@ def main():
     # ─── Synchronization events ───
     station2_ready = threading.Event()   # Stn2 → Stn1
     station3_ready = threading.Event()   # Stn3 → Stn2
-    station6_ready = threading.Event()   # Stn6 → Stn3
+    station4_ready = threading.Event()   # Stn4 → Stn3
+    station5_ready = threading.Event()   # Stn5 → Stn4
+    station6_ready = threading.Event()   # Stn6 → Stn5
     station7_ready = threading.Event()   # Stn7 → Stn6
     pallet_ready = threading.Event()     # Warehouse → Transfer
     product_placed = threading.Event()   # Transfer → Warehouse
@@ -2540,6 +2592,20 @@ def main():
         modbus,
         mqtt_client=mqtt,
         upstream_ready=station3_ready,
+        downstream_ready=station4_ready,
+    )
+
+    station4 = SyncedStation4(
+        modbus,
+        mqtt_client=mqtt,
+        upstream_ready=station4_ready,
+        downstream_ready=station5_ready,
+    )
+
+    station5 = SyncedStation5(
+        modbus,
+        mqtt_client=mqtt,
+        upstream_ready=station5_ready,
         downstream_ready=station6_ready,
     )
 
@@ -2656,6 +2722,52 @@ def main():
     else:
         logger.warning("⚠️ Station 6 not ready in 15s, starting anyway...")
 
+    # ─── Start Station 5 ───
+    thread5 = threading.Thread(target=station5.run, daemon=True, name="Station5")
+    thread5.start()
+    logger.info("⏳ Waiting for Station 5 to initialize...")
+    if station5_ready.wait(timeout=15):
+        logger.info("✅ Station 5 is ready!")
+    else:
+        logger.warning("⚠️ Station 5 not ready in 15s...")
+
+    # ─── Start Station 4 ───
+    thread4 = threading.Thread(target=station4.run, daemon=True, name="Station4")
+    thread4.start()
+    logger.info("⏳ Waiting for Station 4 to initialize...")
+    if station4_ready.wait(timeout=15):
+        logger.info("✅ Station 4 is ready!")
+    else:
+        logger.warning("⚠️ Station 4 not ready in 15s...")
+
+    # ─── Start Station 5 ───
+    thread5 = threading.Thread(
+        target=station5.run,
+        daemon=True,
+        name="Station5",
+    )
+    thread5.start()
+
+    logger.info("⏳ Waiting for Station 5 to initialize...")
+    if station5_ready.wait(timeout=15):
+        logger.info("✅ Station 5 is ready!")
+    else:
+        logger.warning("⚠️ Station 5 not ready in 15s, starting anyway...")
+
+    # ─── Start Station 4 ───
+    thread4 = threading.Thread(
+        target=station4.run,
+        daemon=True,
+        name="Station4",
+    )
+    thread4.start()
+
+    logger.info("⏳ Waiting for Station 4 to initialize...")
+    if station4_ready.wait(timeout=15):
+        logger.info("✅ Station 4 is ready!")
+    else:
+        logger.warning("⚠️ Station 4 not ready in 15s, starting anyway...")
+
     # ─── Start Station 3 ───
     thread3 = threading.Thread(
         target=station3.run,
@@ -2730,6 +2842,8 @@ def main():
                 station1.is_running = False
                 station2.is_running = False
                 station3.is_running = False
+                station4.is_running = False
+                station5.is_running = False
                 station6.is_running = False
                 station7.is_running = False
                 transfer.is_running = False
@@ -2745,13 +2859,16 @@ def main():
         station1.is_running = False
         station2.is_running = False
         station3.is_running = False
+        station4.is_running = False
+        station5.is_running = False
         station6.is_running = False
         station7.is_running = False
         transfer.is_running = False
         warehouse.is_running = False
 
     # Wait for threads to finish
-    for t in all_threads:
+    all_threads_mod = [thread_mc_a, thread_mc_b, thread1, thread2, thread3, thread4, thread5, thread6, thread7, thread_xfer, thread_wh]
+    for t in all_threads_mod:
         t.join(timeout=5)
 
     # ─── Final reports ───
@@ -2764,6 +2881,8 @@ def main():
     print(station1.get_full_report())
     print(station2.get_full_report())
     print(station3.get_full_report())
+    print(station4.get_full_report())
+    print(station5.get_full_report())
     print(station6.get_full_report())
     print(station7.get_full_report())
     print(transfer.get_full_report())
@@ -2778,6 +2897,8 @@ def main():
         modbus.write_output(BELT_3B, False)
         modbus.write_output(BELT_4B, False)
         modbus.write_output(BELT_5B, False)
+        modbus.write_output(BELT_6B, False)
+        modbus.write_output(BELT_7B, False)
         print("  ✅ Transition belts OFF")
     except Exception:
         pass
