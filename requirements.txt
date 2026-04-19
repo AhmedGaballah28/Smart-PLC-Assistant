@@ -24,6 +24,7 @@ sentence-transformers==5.2.3
 
 # Database
 SQLAlchemy==2.0.48
+mcp>=1.0.0
 
 # Dashboard
 streamlit==1.55.0
