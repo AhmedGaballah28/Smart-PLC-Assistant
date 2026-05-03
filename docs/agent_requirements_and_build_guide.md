@@ -89,6 +89,7 @@ All agent messages should include:
 3. Keep thresholds configurable by settings file.
 4. Add compatibility publish to `agents/monitor/alert` and `agents/monitor/status` if needed by legacy consumers.
 5. Add a `run_monitor.py` entry script in `runners/`.
+6. **(COMPLETED)** Hook into the data lake by importing `DbRepository` and saving anomalies automatically using `DbRepository.save_monitor_alert()` during the health loop.
 
 ### Done criteria
 
@@ -128,7 +129,7 @@ All agent messages should include:
 
 1. Create `agents/diagnostic_agent.py`.
 2. On alert event, build `sensor_data` object from latest reports.
-3. Retrieve knowledge snippets (simple file retrieval first; vector retrieval later).
+3. Retrieve knowledge snippets (simple file retrieval first using **`knowledge_base/factory_troubleshooting_manual.md`**; vector retrieval later).
 4. Invoke `LLMClient.diagnose_fault(sensor_data, rag_context)`.
 5. Validate JSON output and enforce schema.
 6. Publish normalized report with correlation id.
@@ -790,12 +791,28 @@ Use the SQLite MCP server as the write/read contract for all agents.
 
 ### 11.4 Recommended build order after this upgrade
 
-1. Monitor + Supervisor
+1. Monitor + Supervisor **(Monitor is hooked up to SQLite data lake)**
 2. Validation + Human
 3. Execution (dry-run first)
-4. Diagnostic + Repair
+4. Diagnostic + Repair **(RAG text manual created at `knowledge_base/factory_troubleshooting_manual.md`)**
 5. Simulation
 6. Optimization
+
+### 12) Current Implementation Progress
+
+As of today, the following components have been fully realized from this document:
+
+1. **Database Layer (SQLite + Alembic)**:
+   - Full 18-table relational schema implemented (`data/plc_data.db`).
+   - `core/repository.py` pattern created to cleanly separate ORM tasks (`DbRepository`) away from AI layers.
+   - MCP Server (`mcp_server/sqlite_mcp_server.py`) refactored.
+2. **Monitor Agent Data Ingestion**:
+   - `runners/realtime_aggregator.py` modified to detect threshold anomalies and push `alerts` natively to SQLite DB (`save_monitor_alert`).
+   - Generating status `NEW_ALERT` ready for the Supervisor to orchestrate.
+3. **Diagnostic / Repair RAG Base**:
+   - Parsed real telemetry cascades and constraints into `knowledge_base/factory_troubleshooting_manual.md` to be read via direct-file retrieval by the reasoning LLM.
+
+**Next Immediate Goal:** Build the `Supervisor Agent` (`agents/supervisor_agent.py`) to poll/subscribe to SQLite incidents mapped as `NEW_ALERT`.
 
 ### 11.5 Single-rule safety contract
 

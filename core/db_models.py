@@ -65,6 +65,7 @@ class Incident(Base):
     __tablename__ = "incidents"
     __table_args__ = (
         UniqueConstraint("correlation_id", name="uq_incidents_correlation_id"),
+        Index("ix_incidents_status_updated_at", "status", "updated_at"),
         CheckConstraint(f"status {in_check(INCIDENT_STATES)}", name="ck_incidents_status"),
         CheckConstraint(f"severity {in_check(SEVERITY_LEVELS)}", name="ck_incidents_severity"),
     )

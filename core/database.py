@@ -81,7 +81,7 @@ def session_scope() -> Iterator[Session]:
 
 def init_sqlite_database(drop_existing: bool = False, echo: bool = False) -> list[str]:
     """
-    Create all database tables and indexes.
+    Create database schema using Alembic migrations.
 
     Args:
         drop_existing: Drop all existing tables first.
@@ -95,7 +95,14 @@ def init_sqlite_database(drop_existing: bool = False, echo: bool = False) -> lis
     if drop_existing:
         Base.metadata.drop_all(bind=engine)
 
-    Base.metadata.create_all(bind=engine)
+    # Use Alembic to apply migrations instead of raw create_all
+    from alembic.config import Config
+    from alembic import command
+
+    alembic_ini_path = Path(__file__).resolve().parent.parent / "alembic.ini"
+    alembic_cfg = Config(str(alembic_ini_path))
+    command.upgrade(alembic_cfg, "head")
+
     return get_table_names()
 
 
