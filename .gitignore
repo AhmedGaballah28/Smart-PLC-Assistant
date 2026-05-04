@@ -9,3 +9,6 @@ data/chroma_db/
 *.log
 .DS_Store
 Thumbs.db
+agents/nodes/repair_node.py
+agents/nodes/validator_node.py
+implementation_plan.md

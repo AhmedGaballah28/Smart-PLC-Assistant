@@ -35,13 +35,10 @@ import signal
 from pathlib import Path
 from datetime import datetime, timezone
 from collections import defaultdict, deque
-import uuid
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-
-from core.repository import DbRepository
 
 logging.basicConfig(
     level=logging.INFO,
@@ -928,28 +925,6 @@ class FactoryAggregator:
 
                     # 3. Process alerts
                     for alert in report.get("alerts", []):
-                        # Construct a unique event_id for idempotency
-                        event_id = "EV-MONITOR-" + uuid.uuid4().hex[:8]
-                        # A stable correlation ID for the station if it's currently faulting, or a new fast one
-                        correlation_id = f"CORR-{line_id}-{alert['station']}-{int(time.time())}"
-                        
-                        try:
-                            # DB Trigger! Inject real fault incident directly into the SQLite data lake
-                            db_res = DbRepository.save_monitor_alert(
-                                event_id=event_id,
-                                correlation_id=correlation_id,
-                                alert_type=alert["type"],
-                                message=alert["message"],
-                                severity=alert["severity"],
-                                line_id=line_id,
-                                station_id=alert["station"],
-                                status="open",
-                                payload_json=alert
-                            )
-                            logger.debug(f"DB Insert: {db_res}")
-                        except Exception as db_e:
-                            logger.error(f"Failed DB Trigger on {line_id}: {db_e}")
-
                         # Publish to MQTT
                         self.mqtt.publish(
                             f"agents/monitor/{line_id}/alert", alert)
