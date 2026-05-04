@@ -1,6 +1,11 @@
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.store.memory import InMemoryStore
+import langchain.globals
+
+# Enable detailed background logging for all agents globally
+langchain.globals.set_verbose(True)
+langchain.globals.set_debug(True) # Optional: set to False if it's too noisy
 # from langchain_huggingface import HuggingFaceEmbeddings  # required if you want semantic search in store
 
 from agents.state import IncidentState
