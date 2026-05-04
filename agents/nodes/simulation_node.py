@@ -11,7 +11,7 @@ from langgraph.store.base import BaseStore
 
 from agents.state import IncidentState
 from agents.tools.mcp_client import get_mcp_tools
-from agents.tools.simulation_tools import run_digital_twin
+from agents.tools.simulation_tools import run_digital_twin, generate_simulation_plots
 
 logger = logging.getLogger(__name__)
 
@@ -20,27 +20,42 @@ class SimulationOutput(BaseModel):
     confidence: float = Field(description="Confidence of the prediction 0.0 to 100.0")
     cycle_time_delta: float = Field(description="Predicted cycle time change in seconds.")
     throughput_delta_pct: float = Field(description="Predicted throughput change as percentage.")
+    reasoning: str = Field(default="", description="Brief explanation of the prediction.")
 
 SIMULATION_SYSTEM_PROMPT = """You are an elite simulation analysis agent for industrial automation.
 
-Your MUST use the 'run_digital_twin' tool to predict what will happen if we apply the proposed PLC parameters to the factory.
+You have access to a PHYSICS-BASED simulation engine that uses first-principles models:
+- Thermal dynamics (1st-order ODE with transfer function)
+- Belt dynamics (speed, slip probability, brownout risk)
+- Production line model (throughput, bottleneck analysis, pass rate)
 
-After getting the digital twin results, you MUST log the simulation result to the database using the 'save_simulation_result' tool.
-IMPORTANT: The user message will provide the event's correlation_id.
-Set:
-- event_id: "SIM-{correlation_id}" (replacing {correlation_id} with the actual id)
-- correlation_id: "{correlation_id}" (replacing {correlation_id} with the actual id)
-- go_no_go: Output from twin (e.g. "GO")
-- confidence: Output from twin
-- predicted_cycle_time_delta: Output from twin
-- predicted_throughput_delta: Output from twin
+WORKFLOW:
+1. Use the 'run_digital_twin' tool with the station_id and a JSON string containing:
+   - The proposed repair parameters (action, speed_factor, clear_fault, etc.)
+   - Current sensor context (temperature, fault_type, severity_level, etc.)
+   
+2. Analyze the physics model output — it includes before/after comparisons,
+   transfer function parameters, and per-model GO/NO_GO verdicts.
 
-Think carefully about the twin's output before declaring GO or NO_GO.
+3. Optionally use 'generate_simulation_plots' to create visual before/after charts.
+
+4. MUST log the simulation result to the database using the 'save_simulation_result' tool.
+   IMPORTANT: The user message will provide the event's correlation_id.
+   Set:
+   - event_id: "SIM-{correlation_id}"
+   - correlation_id: the actual correlation_id
+   - go_no_go: Output from simulation
+   - confidence: Output from simulation
+   - predicted_cycle_time_delta: Output from simulation
+   - predicted_throughput_delta: Output from simulation
+
+Think carefully about the model outputs before declaring GO or NO_GO.
+A NO_GO from any physics model should be taken seriously.
 """
 
 llm = ChatGroq(model_name="llama-3.3-70b-versatile", temperature=0)
 
-tools = [run_digital_twin]
+tools = [run_digital_twin, generate_simulation_plots]
 try:
     tools.extend(get_mcp_tools())
 except Exception as e:
@@ -55,12 +70,21 @@ def run_simulation_node(state: IncidentState, config: RunnableConfig, *, store: 
     params = proposals[0].get("parameters_to_change", {}) if proposals else {}
     station_id = state.get("station_id", "unknown")
     correlation_id = state.get("alert_id", "unknown")
+    sensor_data = state.get("sensor_data", {})
     
     logger.info(f"Simulation node starting for {station_id} (Alert: {correlation_id})")
     
+    # Merge sensor context into parameters so the physics engine gets it
+    sim_input = dict(params)
+    if isinstance(sensor_data, dict):
+        for k in ("temperature", "vibration", "power", "severity_level",
+                   "fault_type", "type", "speed_factor"):
+            if k in sensor_data and k not in sim_input:
+                sim_input[k] = sensor_data[k]
+    
     user_prompt = f"""Run simulation for station {station_id} with these proposed parameters:
 
-{json.dumps(params)}
+{json.dumps(sim_input)}
 
 Correlation ID for this incident: {correlation_id}"""
     
@@ -70,11 +94,12 @@ Correlation ID for this incident: {correlation_id}"""
         structured_result = result["structured_response"]
         
         impact = {
-            "source": "react_simulation_agent",
+            "source": "physics_simulation_agent",
             "cycle_time_delta": structured_result.cycle_time_delta,
             "throughput_delta_pct": structured_result.throughput_delta_pct,
             "safe": True if structured_result.go_no_go == "GO" else False,
-            "confidence": structured_result.confidence
+            "confidence": structured_result.confidence,
+            "reasoning": structured_result.reasoning,
         }
         state["simulation_impact"] = impact
         

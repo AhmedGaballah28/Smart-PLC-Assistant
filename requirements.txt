@@ -35,6 +35,10 @@ plotly==5.18.0
 pandas==2.3.3
 numpy==2.4.3
 
+# Simulation Engine (physics models)
+scipy>=1.14.0
+matplotlib>=3.9.0
+
 # Utilities
 python-dotenv==1.2.2
 pydantic==2.12.5
