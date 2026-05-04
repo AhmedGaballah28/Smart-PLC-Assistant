@@ -3,13 +3,13 @@ import logging
 import time
 from typing import Dict, Any
 
-from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableConfig
 from langgraph.prebuilt import create_react_agent
 from langgraph.store.base import BaseStore
 
 from agents.state import IncidentState
+from agents.llm_factory import get_llm
 from agents.tools.mcp_client import get_mcp_tools
 
 try:
@@ -41,7 +41,7 @@ MUST USE:
    - station_id: "{station_id}" (replacing {station_id} with actual)
 """
 
-llm = ChatGroq(model_name="llama-3.3-70b-versatile", temperature=0)
+llm = get_llm("execution", temperature=0)
 
 mcp_tools = []
 try:

@@ -3,13 +3,13 @@ import logging
 from typing import Dict, Any, List
 from pydantic import BaseModel, Field
 
-from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableConfig
 from langgraph.prebuilt import create_react_agent
 from langgraph.store.base import BaseStore
 
 from agents.state import IncidentState
+from agents.llm_factory import get_llm, get_model_name
 from agents.tools.mcp_client import get_mcp_tools
 from agents.tools.rag_tools import search_factory_manual
 
@@ -33,15 +33,15 @@ USE 'search_factory_manual' IMMEDIATELY to look up the specific sensor or actuat
 
 After you have enough context, MUST use the 'save_diagnosis' tool to log your final diagnosis to the database.
 
-IMPORTANT: The user message will provide the event's correlation_id and past incident history.
+IMPORTANT: The user message will provide the event's correlation_id, model_name, and past incident history.
 When calling 'save_diagnosis', set:
 - event_id to "DX-{correlation_id}" (replacing {correlation_id} with the actual id)
 - correlation_id to "{correlation_id}" (replacing {correlation_id} with the actual id)
-- model_name to "llama-3.3-70b-versatile"
+- model_name to the model_name provided in the user message
 - Fill out root_cause, confidence, severity, urgency, and recommended_action.
 """
 
-llm = ChatGroq(model_name="llama-3.3-70b-versatile", temperature=0)
+llm = get_llm("diagnostic", temperature=0)
 
 tools = [search_factory_manual]
 try:
@@ -70,9 +70,12 @@ def run_diagnostic_node(state: IncidentState, config: RunnableConfig, *, store: 
         past_context = f"Failed to access long term memory: {e}"
 
     
+    model_name = get_model_name("diagnostic")
+    
     user_prompt = f"""Diagnose this telemetry payload: {json.dumps(sensor_data)}
 
 Correlation ID for this incident: {correlation_id}
+Model name for DB logging: {model_name}
 
 Past Incident History for this station:
 {past_context}"""
