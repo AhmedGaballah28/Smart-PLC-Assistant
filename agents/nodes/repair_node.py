@@ -24,6 +24,9 @@ class RepairProposal(BaseModel):
     risk_level: str = Field(description="Risk level (low, medium, high).")
     trade_offs: str = Field(description="Trade-offs or side effects.")
 
+class RepairProposals(BaseModel):
+    proposals: List[RepairProposal] = Field(description="List of proposed repair options.")
+
 REPAIR_SYSTEM_PROMPT = """You are an expert industrial PLC repair agent.
 
 Your job is to propose at least two safe repair options for the diagnosed fault.
@@ -55,7 +58,7 @@ try:
 except Exception as e:
     logger.warning(f"Could not load MCP tools for repair: {e}")
 
-repair_agent = create_react_agent(llm, tools, prompt=REPAIR_SYSTEM_PROMPT, response_format=List[RepairProposal])
+repair_agent = create_react_agent(llm, tools, prompt=REPAIR_SYSTEM_PROMPT, response_format=RepairProposals)
 
 def run_repair_node(state: IncidentState, config: RunnableConfig, *, store: BaseStore) -> IncidentState:
     """
@@ -89,8 +92,8 @@ Correlation ID for this incident: {correlation_id}"""
         result = repair_agent.invoke({"messages": [("user", user_prompt)]})
 
         structured = result["structured_response"]
-        # Convert List[RepairProposal] to list of dicts for state
-        proposals = [p.model_dump() for p in structured] if isinstance(structured, list) else [structured.model_dump()]
+        # Extract the list of dicts from the RepairProposals wrapper
+        proposals = [p.model_dump() for p in structured.proposals]
         state["repair_proposals"] = proposals
 
         logger.info(f"Repair agent produced {len(proposals)} proposals")
