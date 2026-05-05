@@ -40,10 +40,13 @@ When calling 'save_diagnosis', set:
 - correlation_id to "{correlation_id}" (replacing {correlation_id} with the actual id)
 - model_name to the model_name provided in the user message
 - Fill out root_cause, confidence, severity, urgency, and recommended_action.
+
+CRITICAL INSTRUCTION:
+If the telemetry shows an explicit fault (like 'fault_type': 'overheat') or severity is 'critical'/'warning', you MUST EXPLICITLY MENTION the fault name in your 'recommended_action' or 'root_cause' so the downstream repair node knows exactly what fault string needs to be cleared in the PLC reset command.
 """
 
 llm = ChatGoogleGenerativeAI(
-    model="gemini-2.5-flash",
+    model="gemini-2.5-pro",
     temperature=0,
     google_api_key=os.getenv("GOOGLE_API_KEY"),
 )

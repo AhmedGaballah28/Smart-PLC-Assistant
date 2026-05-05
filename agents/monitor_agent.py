@@ -24,7 +24,7 @@ class MonitorAgent:
     def __init__(self):
         self.mqtt = MQTTClient(client_id="monitor_agent_daemon")
         self.running = False
-        self.active_alerts = set() # Dampening to avoid spamming the graph
+        self.active_alerts = {} # Dampening map: damp_key -> expiration_timestamp
 
     def start(self):
         if not self.mqtt.connect():
@@ -66,12 +66,17 @@ class MonitorAgent:
         metric_str = payload.get("field", payload.get("message", "unknown_metric"))
         alert_type = payload.get("type", "UNKNOWN_ALERT")
         
-        # Simple dampening
+        # Time-based dampening (2 minutes cool-off per alert type)
+        current_time = time.time()
         damp_key = f"{line_id}_{station_id}_{metric_str}_{alert_type}"
+        
         if damp_key in self.active_alerts:
-            # Maybe clear older alerts after some time, but simple set is fine for now
-            return
-        self.active_alerts.add(damp_key)
+            if current_time < self.active_alerts[damp_key]:
+                # Still in cooldown period, ignore this alert
+                return
+                
+        # Update/Set cooldown for 5 minutes (300 seconds) from now
+        self.active_alerts[damp_key] = current_time + 300
         
         alert_id = str(uuid.uuid4())
         logger.warning(f"AGGREGATOR ANOMALY RECEIVIED: {alert_type} on {line_id}/{station_id}")
