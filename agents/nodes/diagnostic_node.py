@@ -1,11 +1,12 @@
+import os
 import json
 import logging
 from typing import Dict, Any, List
 from pydantic import BaseModel, Field
 
-from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableConfig
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.prebuilt import create_react_agent
 from langgraph.store.base import BaseStore
 
@@ -33,15 +34,22 @@ USE 'search_factory_manual' IMMEDIATELY to look up the specific sensor or actuat
 
 After you have enough context, MUST use the 'save_diagnosis' tool to log your final diagnosis to the database.
 
-IMPORTANT: The user message will provide the event's correlation_id and past incident history.
+IMPORTANT: The user message will provide the event's correlation_id, model_name, and past incident history.
 When calling 'save_diagnosis', set:
 - event_id to "DX-{correlation_id}" (replacing {correlation_id} with the actual id)
 - correlation_id to "{correlation_id}" (replacing {correlation_id} with the actual id)
-- model_name to "llama-3.3-70b-versatile"
+- model_name to the model_name provided in the user message
 - Fill out root_cause, confidence, severity, urgency, and recommended_action.
+
+CRITICAL INSTRUCTION:
+If the telemetry shows an explicit fault (like 'fault_type': 'overheat') or severity is 'critical'/'warning', you MUST EXPLICITLY MENTION the fault name in your 'recommended_action' or 'root_cause' so the downstream repair node knows exactly what fault string needs to be cleared in the PLC reset command.
 """
 
-llm = ChatGroq(model_name="llama-3.3-70b-versatile", temperature=0)
+llm = ChatGoogleGenerativeAI(
+    model="gemini-2.5-pro",
+    temperature=0,
+    google_api_key=os.getenv("GOOGLE_API_KEY"),
+)
 
 tools = [search_factory_manual]
 try:
@@ -73,6 +81,7 @@ def run_diagnostic_node(state: IncidentState, config: RunnableConfig, *, store: 
     user_prompt = f"""Diagnose this telemetry payload: {json.dumps(sensor_data)}
 
 Correlation ID for this incident: {correlation_id}
+Model name for DB logging: gemini-2.5-flash
 
 Past Incident History for this station:
 {past_context}"""

@@ -607,6 +607,42 @@ class MachiningCenterController:
             },
         }
 
+    def apply_parameters(self, params: dict):
+        """Apply runtime parameter changes from the AI agent.
+
+        Supported keys:
+          clear_fault (str|bool): fault type to clear, or True for "all"
+          spindle_speed (float): CNC spindle speed adjustment factor
+          speed_factor (float): overall speed multiplier
+          fan_speed (float): cooling fan percentage 0-100
+        """
+        logger.info(f"{self.STATION_ID} apply_parameters: {params}")
+
+        cf = params.get("clear_fault")
+        if cf:
+            fault_type = cf if isinstance(cf, str) and cf != "True" else "all"
+            self.clear_fault(fault_type)
+
+        if "speed_factor" in params:
+            sf = max(0.1, min(2.0, float(params["speed_factor"])))
+            self.temperature.heating_rate = 0.15 * sf
+            logger.info(f"  Speed factor → {sf}")
+
+        if "fan_speed" in params:
+            fan = max(0, min(100, float(params["fan_speed"])))
+            self.temperature.cooling_rate = 0.05 * (1 + fan / 100.0)
+            logger.info(f"  Fan speed → {fan}%")
+
+        if "spindle_speed" in params:
+            logger.info(f"  Spindle speed → {params['spindle_speed']}")
+
+        if self.mqtt and self.mqtt.is_connected:
+            self.mqtt.publish(f"factory/{self.STATION_ID}/parameters_applied", {
+                "parameters": params,
+                "station": self.STATION_ID,
+                "timestamp": datetime.now().isoformat(),
+            })
+
     def get_full_report(self) -> str:
         s = self.get_status()
         cnt = s["counters"]

@@ -10,6 +10,7 @@ from agents.nodes.validator_node import run_validator_node
 from agents.nodes.simulation_node import run_simulation_node
 from agents.nodes.human_node import run_human_node
 from agents.nodes.execution_node import run_execution_node
+from agents.nodes.report_node import run_report_node
 
 MAX_REPAIR_ATTEMPTS = 3
 
@@ -47,6 +48,7 @@ workflow.add_node("validate", run_validator_node)
 workflow.add_node("simulate", run_simulation_node)
 workflow.add_node("human", run_human_node)
 workflow.add_node("execute", run_execution_node)
+workflow.add_node("report", run_report_node)
 workflow.add_node("inject_feedback", run_inject_feedback_node)
 
 # Add edges
@@ -61,7 +63,7 @@ workflow.add_conditional_edges(
     {
         "simulate": "simulate",
         "retry_repair": "inject_feedback",
-        "end": END
+        "end": "report"
     }
 )
 
@@ -74,14 +76,15 @@ workflow.add_conditional_edges(
     {
         "execute": "execute",
         "retry_repair": "inject_feedback",
-        "end": END
+        "end": "report"
     }
 )
 
 # inject_feedback always goes back to repair
 workflow.add_edge("inject_feedback", "repair")
 
-workflow.add_edge("execute", END)
+workflow.add_edge("execute", "report")
+workflow.add_edge("report", END)
 
 # Note: Compiling the app with Checkpointer and Store for memory layers
 memory = MemorySaver()

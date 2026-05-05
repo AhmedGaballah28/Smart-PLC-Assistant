@@ -30,3 +30,6 @@ class IncidentState(TypedDict):
 
     # Execution Agent
     execution_status: str
+
+    # Report Node
+    report_path: str

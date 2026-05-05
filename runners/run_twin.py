@@ -1500,10 +1500,13 @@ class FaultInjectionManager:
         all_keys = ["mc_a", "mc_b", "stn1", "stn2", "stn3",
                      "stn6", "stn7", "transfer", "warehouse"]
 
-        def _handler(client, userdata, msg):
+        def _handler(topic, payload):
             try:
-                payload = json.loads(msg.payload.decode())
-                topic = msg.topic
+                # payload is already parsed by MQTTClient._on_message
+                if isinstance(payload, str):
+                    payload = json.loads(payload)
+
+                logger.info(f"🔧 MQTT fault received: {topic} → {payload}")
 
                 # Parse topic to determine target
                 parts = topic.split("/")
@@ -1547,7 +1550,7 @@ class FaultInjectionManager:
                         )
 
             except Exception as e:
-                logger.debug(f"MQTT fault handler error: {e}")
+                logger.warning(f"MQTT fault handler error: {e}")
 
         # Subscribe to all topics
         topics = ["factory/faults/inject"]
@@ -1563,6 +1566,103 @@ class FaultInjectionManager:
                 pass
 
         logger.info(f"📡 MQTT fault listeners active on {len(topics)} topics")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# COMMAND HANDLER — Receives AI agent repair commands via MQTT
+# ═══════════════════════════════════════════════════════════════════════════
+
+class CommandHandler:
+    """
+    Listens on MQTT for repair commands from the execution agent and
+    routes them to the appropriate station controller.
+
+    Topics:
+      factory/{line_id}/{station_key}/commands/apply  — apply parameter changes
+      factory/{line_id}/{station_key}/commands/clear   — clear active faults
+
+    Payload (apply):
+      {"parameters": {...}, "station_id": "stn1", "line_id": "line1"}
+
+    Payload (clear):
+      {"action": "clear", "fault_type": "overheat"|"all", ...}
+    """
+
+    def __init__(self, line1_stations, line2_stations, mqtt_client=None):
+        self.l1 = line1_stations
+        self.l2 = line2_stations
+        self.mqtt = mqtt_client
+        self._lock = threading.Lock()
+
+    def setup_listeners(self, mqtt_client=None):
+        """Subscribe to command topics for all stations on both lines."""
+        client = mqtt_client or self.mqtt
+        if not client:
+            logger.warning("CommandHandler: No MQTT client — skipping setup")
+            return
+
+        all_keys = ["mc_a", "mc_b", "stn1", "stn2", "stn3",
+                     "stn6", "stn7", "transfer", "warehouse"]
+
+        def _on_command(topic, payload):
+            try:
+                # payload is already parsed by MQTTClient._on_message
+                if isinstance(payload, str):
+                    payload = json.loads(payload)
+                parts = topic.split("/")
+
+                # Expected: factory/{line_id}/{station_key}/commands/{action}
+                if len(parts) < 5 or parts[3] != "commands":
+                    return
+
+                line_id = parts[1]
+                station_key = parts[2]
+                action = parts[4]  # "apply" or "clear"
+
+                stations = self.l1 if line_id == "line1" else self.l2
+                station = stations.get(station_key)
+                if not station:
+                    logger.warning(f"CommandHandler: Unknown station {line_id}/{station_key}")
+                    return
+
+                with self._lock:
+                    if action == "clear":
+                        fault_type = payload.get("fault_type", "all")
+                        station.clear_fault(fault_type)
+                        logger.info(f"CommandHandler: Cleared '{fault_type}' on "
+                                    f"{line_id}/{station_key}")
+
+                    elif action == "apply":
+                        params = payload.get("parameters", {})
+                        if hasattr(station, "apply_parameters"):
+                            station.apply_parameters(params)
+                            logger.info(f"CommandHandler: Applied params to "
+                                        f"{line_id}/{station_key}: {params}")
+                        else:
+                            # Fallback: just clear faults if station lacks apply_parameters
+                            if params.get("clear_fault"):
+                                ft = params.get("clear_fault", "all")
+                                station.clear_fault(ft if isinstance(ft, str) else "all")
+                            logger.warning(f"CommandHandler: {station_key} has no "
+                                           f"apply_parameters — used fallback")
+
+            except Exception as e:
+                logger.error(f"CommandHandler error: {e}")
+
+        # Subscribe to wildcard topics for both lines
+        topics = []
+        for line_id in ["line1", "line2"]:
+            for key in all_keys:
+                topics.append(f"factory/{line_id}/{key}/commands/apply")
+                topics.append(f"factory/{line_id}/{key}/commands/clear")
+
+        for topic in topics:
+            try:
+                client.subscribe(topic, _on_command)
+            except Exception:
+                pass
+
+        logger.info(f"📡 CommandHandler active on {len(topics)} command topics")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -2192,6 +2292,15 @@ def main():
     # Setup MQTT fault listeners (allows remote fault injection)
     if mqtt_client:
         fault_manager.setup_mqtt_listeners(mqtt_client)
+
+    # ─── Create command handler (receives AI agent repair commands) ───
+    command_handler = CommandHandler(
+        stations_l1_dict, stations_l2_dict,
+        mqtt_client=mqtt_client,
+    )
+    if mqtt_client:
+        command_handler.setup_listeners(mqtt_client)
+        logger.info("📡 Command handler: AI agent repair commands active")
 
     # ─── Create telemetry collector ───
     telemetry_collector = None

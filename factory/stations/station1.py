@@ -71,7 +71,7 @@ class TemperatureSimulator:
 class VibrationSimulator:
     base_level: float = 5.0
     current: float = 0.0
-    noise: float = 2.0
+    noise: float = 0.3 # Reduced from 2.0 to eliminate normal simulation false positives
     fault_offset: float = 0.0
 
     def update(self, is_running: bool, speed_factor: float = 1.0):
@@ -80,7 +80,7 @@ class VibrationSimulator:
                             + self.fault_offset
                             + random.gauss(0, self.noise))
         else:
-            self.current = 1.0 + random.gauss(0, 0.3)
+            self.current = 1.0 + random.gauss(0, 0.1) # Reduced from 0.3
         self.current = max(0, self.current)
         return round(self.current, 2)
 
@@ -96,7 +96,7 @@ class PowerSimulator:
     idle_power: float = 0.1
     running_power: float = 2.2
     current: float = 0.0
-    noise: float = 0.1
+    noise: float = 0.02 # Reduced from 0.1 to stabilize power readings
     total_energy: float = 0.0
     fault_multiplier: float = 1.0
     _last_update: float = field(default_factory=time.time)
@@ -109,7 +109,7 @@ class PowerSimulator:
             self.current = (self.running_power * self.fault_multiplier
                             + random.gauss(0, self.noise))
         else:
-            self.current = self.idle_power + random.gauss(0, 0.02)
+            self.current = self.idle_power + random.gauss(0, 0.005) # Reduced from 0.02
         self.current = max(0, self.current)
         self.total_energy += (self.current * dt) / 3600.0
         return round(self.current, 3)
@@ -1044,6 +1044,49 @@ class Station1Controller:
                 "recent_events": self._fault_events[-10:],
             },
         }
+
+    def apply_parameters(self, params: dict):
+        """Apply runtime parameter changes from the AI agent.
+
+        Supported keys:
+          clear_fault (str|bool): fault type to clear, or True for "all"
+          speed_factor (float): belt speed multiplier 0.1-2.0
+          fan_speed (float): aux cooling fan percentage 0-100
+          target_belt_speed (float): belt speed target 0-100
+        """
+        logger.info(f"Station 1 apply_parameters: {params}")
+
+        # Clear faults
+        cf = params.get("clear_fault")
+        if cf:
+            fault_type = cf if isinstance(cf, str) and cf != "True" else "all"
+            self.clear_fault(fault_type)
+
+        # Adjust belt speed target
+        if "target_belt_speed" in params:
+            self._target_belt_speed = max(10, min(100, float(params["target_belt_speed"])))
+            logger.info(f"  Belt speed target → {self._target_belt_speed}")
+
+        # Adjust speed factor (affects cycle timing)
+        if "speed_factor" in params:
+            sf = max(0.1, min(2.0, float(params["speed_factor"])))
+            # Update the temperature simulator heating rate proportionally
+            self.temperature.heating_rate = 0.15 * sf
+            logger.info(f"  Speed factor → {sf}")
+
+        # Adjust fan speed (affects cooling)
+        if "fan_speed" in params:
+            fan = max(0, min(100, float(params["fan_speed"])))
+            # Higher fan speed increases cooling rate
+            self.temperature.cooling_rate = 0.05 * (1 + fan / 100.0)
+            logger.info(f"  Fan speed → {fan}% (cooling_rate={self.temperature.cooling_rate:.3f})")
+
+        if self.mqtt and self.mqtt.is_connected:
+            self.mqtt.publish(f"factory/{self.STATION_ID}/parameters_applied", {
+                "parameters": params,
+                "station": self.STATION_ID,
+                "timestamp": datetime.now().isoformat(),
+            })
 
     def get_full_report(self) -> str:
         s = self.get_status()

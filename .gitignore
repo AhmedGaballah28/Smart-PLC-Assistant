@@ -3,12 +3,13 @@ __pycache__/
 *.py[cod]
 Ahmed/
 data/*.db
+data/*.db-shm
+data/*.db-wal
+data/run_*/
 data/chroma_db/
 .vscode/
 .idea/
 *.log
 .DS_Store
 Thumbs.db
-agents/nodes/repair_node.py
-agents/nodes/validator_node.py
 implementation_plan.md

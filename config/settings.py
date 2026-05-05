@@ -31,10 +31,23 @@ FACTORY_SCALE_FACTOR = float(os.getenv("FACTORY_SCALE_FACTOR", 100.0))
 
 
 # =============================================================================
-# LLM CONFIGURATION (GROQ - FREE)
+# LLM CONFIGURATION
 # =============================================================================
+
+# API Keys — set whichever you have in .env
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+AGENT_ROUTER_API_KEY = os.getenv("AGENT_ROUTER_API_KEY")
+
 LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", 0.3))
+
+# Per-agent model overrides (optional — set in .env to customize)
+# Format: PROVIDER:MODEL  e.g. "google:gemini-2.5-pro", "agentrouter:claude-opus-4-6", "groq:llama-3.3-70b-versatile"
+DIAGNOSTIC_MODEL = os.getenv("DIAGNOSTIC_MODEL", "auto")
+REPAIR_MODEL = os.getenv("REPAIR_MODEL", "auto")
+VALIDATOR_MODEL = os.getenv("VALIDATOR_MODEL", "auto")
+SIMULATION_MODEL = os.getenv("SIMULATION_MODEL", "auto")
+EXECUTION_MODEL = os.getenv("EXECUTION_MODEL", "auto")
 
 
 # =============================================================================

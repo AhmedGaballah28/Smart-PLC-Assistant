@@ -63,18 +63,24 @@ _child_processes: list[subprocess.Popen] = []
 
 def _launch_in_terminal(title: str, command: list[str], cwd: str = None) -> subprocess.Popen:
     """
-    Launch a command in a NEW Windows terminal window.
-    Uses 'start' with /K to keep the window open for debugging.
+    Launch a command in a NEW named Windows console window.
+    Uses cmd /S /K so the window stays open for debugging.
+    subprocess.list2cmdline handles paths-with-spaces quoting.
     """
     cwd = cwd or str(PROJECT_ROOT)
     
-    # Build the command string for cmd.exe
-    cmd_str = " ".join(f'"{c}"' if " " in c else c for c in command)
+    # Properly quote each element of the command list
+    cmd_line = subprocess.list2cmdline(command)
     
+    # Strip non-ASCII (emojis) from title — CMD can't handle them
+    clean_title = "".join(c for c in title if ord(c) < 128).strip() or "Service"
+    
+    # cmd /S strips the outermost quotes so inner quotes protect
+    # individual paths that contain spaces
     proc = subprocess.Popen(
-        f'start "{title}" /D "{cwd}" cmd /K {cmd_str}',
-        shell=True,
+        f'cmd /S /K "title {clean_title} && {cmd_line}"',
         cwd=cwd,
+        creationflags=subprocess.CREATE_NEW_CONSOLE,
     )
     
     _child_processes.append(proc)
@@ -113,23 +119,18 @@ def _run_sync(title: str, command: list[str], cwd: str = None, timeout: int = 30
 
 
 def shutdown_all(signum=None, frame=None):
-    """Gracefully terminate all child processes."""
+    """Forcefully terminate all child process trees."""
     logger.info("")
     logger.info("🛑 Shutting down all services...")
     
     for proc in reversed(_child_processes):
         try:
-            proc.terminate()
-        except Exception:
-            pass
-    
-    # Give processes time to exit
-    time.sleep(2)
-    
-    for proc in reversed(_child_processes):
-        try:
-            if proc.poll() is None:
-                proc.kill()
+            # taskkill /T kills the entire process tree (cmd + python child)
+            # /F forces termination
+            subprocess.run(
+                f"taskkill /T /F /PID {proc.pid}",
+                shell=True, capture_output=True,
+            )
         except Exception:
             pass
     
@@ -258,29 +259,31 @@ STARTUP ORDER:
     time.sleep(2)
     print()
 
-    # ── Step 5: Digital Twin ──────────────────────────────────────────────
+    # ── Step 5: Monitor Agent (LangGraph) ─────────────────────────────────
+    #   Started BEFORE the twin so it has time to load embedding model + LLMs
+    if not args.no_monitor:
+        logger.info("═══ Step 5: Monitor Agent (LangGraph Supervisor) ═══")
+        monitor_cmd = [PYTHON_EXE, str(MONITOR_AGENT_SCRIPT)]
+        _launch_in_terminal("🤖 Monitor Agent", monitor_cmd)
+        logger.info("  ⏳ Waiting 100 s for Monitor Agent to load models...")
+        time.sleep(100)
+        print()
+    else:
+        logger.info("═══ Step 5: Monitor Agent ═══")
+        logger.info("  ⏩ Skipped (--no-monitor)")
+        print()
+
+    # ── Step 6: Digital Twin ──────────────────────────────────────────────
     if not args.no_twin:
-        logger.info("═══ Step 5: Digital Twin (Factory I/O + MQTT Telemetry) ═══")
+        logger.info("═══ Step 6: Digital Twin (Factory I/O + MQTT Telemetry) ═══")
         logger.info("  ℹ️  Ensure Factory I/O scene is loaded and running!")
         twin_cmd = [PYTHON_EXE, str(TWIN_SCRIPT)]
         _launch_in_terminal("🏭 Digital Twin", twin_cmd)
         time.sleep(3)
         print()
     else:
-        logger.info("═══ Step 5: Digital Twin ═══")
+        logger.info("═══ Step 6: Digital Twin ═══")
         logger.info("  ⏩ Skipped (--no-twin)")
-        print()
-
-    # ── Step 6: Monitor Agent (LangGraph) ─────────────────────────────────
-    if not args.no_monitor:
-        logger.info("═══ Step 6: Monitor Agent (LangGraph Supervisor) ═══")
-        monitor_cmd = [PYTHON_EXE, str(MONITOR_AGENT_SCRIPT)]
-        _launch_in_terminal("🤖 Monitor Agent", monitor_cmd)
-        time.sleep(2)
-        print()
-    else:
-        logger.info("═══ Step 6: Monitor Agent ═══")
-        logger.info("  ⏩ Skipped (--no-monitor)")
         print()
 
     # ── Summary ───────────────────────────────────────────────────────────
@@ -294,10 +297,10 @@ STARTUP ORDER:
     if not args.no_logger:
         services.append(("  📊 Data Logger", "Terminal", "CSV → " + data_dir))
     services.append(("  🔍 Aggregator", "Terminal", "z-score + threshold alerts"))
-    if not args.no_twin:
-        services.append(("  🏭 Digital Twin", "Terminal", "Factory I/O Modbus + MQTT"))
     if not args.no_monitor:
         services.append(("  🤖 Monitor Agent", "Terminal", "LangGraph Supervisor"))
+    if not args.no_twin:
+        services.append(("  🏭 Digital Twin", "Terminal", "Factory I/O Modbus + MQTT"))
     
     for name, mode, desc in services:
         print(f"║ {name:<22} │ {mode:<10} │ {desc:<27} ║")
