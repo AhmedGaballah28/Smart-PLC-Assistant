@@ -1,0 +1,30 @@
+
+──────────────────────────────────────────────────────────────────────
+[2026-05-05 10:01:19]
+=== FACTORY STATUS ===
+Time: 10:01:19
+
+--- LINE1 ---
+Health: healthy
+Production: 0 units (0.0/min)
+  All stations normal ✅
+
+--- LINE2 ---
+Health: healthy
+Production: 0 units (0.0/min)
+  All stations normal ✅
+
+──────────────────────────────────────────────────────────────────────
+[2026-05-05 10:02:19]
+=== FACTORY STATUS ===
+Time: 10:02:19
+
+--- LINE1 ---
+Health: healthy
+Production: 0 units (0.0/min)
+  All stations normal ✅
+
+--- LINE2 ---
+Health: healthy
+Production: 0 units (0.0/min)
+  All stations normal ✅

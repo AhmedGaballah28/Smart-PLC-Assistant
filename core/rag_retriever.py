@@ -1,7 +1,9 @@
+import sys
+import os
+sys.path.append("C:\\stlibs")
 from langchain_text_splitters import MarkdownHeaderTextSplitter 
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
-import os
 from dotenv import load_dotenv
 from langchain_core.runnables import RunnableLambda
 
