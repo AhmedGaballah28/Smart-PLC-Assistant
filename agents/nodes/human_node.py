@@ -34,7 +34,37 @@ def run_human_node(state: IncidentState, config: RunnableConfig, *, store: BaseS
         
     # 2. LangGraph Interrupt!
     # Engine completely freezes until `.stream(Command(resume=...))`
-    human_input = interrupt(summary)
+    # === TEMPORARY CLI OVERRIDE FOR TESTING ===
+    # human_input = interrupt(summary)
+    
+    print("\n" + "="*60)
+    print(f"🚨 HUMAN APPROVAL REQUIRED FOR ALERT: {alert_id}")
+    print(f"   Diagnosis: {summary.get('diagnosis')}")
+    print(f"   Proposed Repair: {summary.get('proposed_repair')}")
+    print(f"   Simulation Impact: {summary.get('simulation_impact')}")
+    print("="*60)
+    
+    raw_input = input("\nType 'APPROVE' or 'REJECT' [optional reason]: ").strip()
+    
+    if raw_input == "":
+        decision = "APPROVE"
+        reason = "CLI override for testing"
+    else:
+        parts = raw_input.split(maxsplit=1)
+        decision = parts[0].upper()
+        if decision not in ["APPROVE", "REJECT", "MODIFY"]:
+            decision = "REJECT" # Prevents database crashes
+        reason = parts[1] if len(parts) > 1 else ""
+        
+    if not reason:
+        reason = "No reason provided"
+
+    human_input = {
+        "decision": decision,
+        "reason": reason,
+        "modified_params": summary["proposed_repair"].get("parameters_to_change", {})
+    }
+    # ==========================================
     
     # 3. Resume with output
     logger.info(f"Operator clicked '{human_input.get('decision')}' on the dashboard.")

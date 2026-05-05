@@ -138,13 +138,16 @@ def run_digital_twin(station_id: str, proposed_parameters: str) -> str:
         })
 
     # Extract sensor context from the params (repair agent embeds it)
+    SENSOR_KEYS = {
+        "temperature", "vibration", "power", "power_consumption",
+        "severity_level", "severity", "fault_type", "type",
+        "speed_factor", "fan_speed", "speed_cmd_pct", "tension_pct",
+        "slip_severity", "power_severity", "line_speed_multiplier",
+        "value", "motor_runtime", "belt_distance",
+    }
     sensor_data = {
         k: params.pop(k) for k in list(params.keys())
-        if k in ("temperature", "vibration", "power", "severity_level",
-                 "severity", "fault_type", "type", "speed_factor",
-                 "fan_speed", "speed_cmd_pct", "tension_pct",
-                 "slip_severity", "power_severity",
-                 "line_speed_multiplier", "value")
+        if k in SENSOR_KEYS
     }
 
     # 1. Try physics engine (primary)

@@ -1,3 +1,4 @@
+import os
 import json
 import logging
 from typing import Dict, Any, List
@@ -5,11 +6,11 @@ from pydantic import BaseModel, Field
 
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableConfig
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.prebuilt import create_react_agent
 from langgraph.store.base import BaseStore
 
 from agents.state import IncidentState
-from agents.llm_factory import get_llm, get_model_name
 from agents.tools.mcp_client import get_mcp_tools
 from agents.tools.rag_tools import search_factory_manual
 
@@ -41,7 +42,11 @@ When calling 'save_diagnosis', set:
 - Fill out root_cause, confidence, severity, urgency, and recommended_action.
 """
 
-llm = get_llm("diagnostic", temperature=0)
+llm = ChatGoogleGenerativeAI(
+    model="gemini-2.5-flash",
+    temperature=0,
+    google_api_key=os.getenv("GOOGLE_API_KEY"),
+)
 
 tools = [search_factory_manual]
 try:
@@ -70,12 +75,10 @@ def run_diagnostic_node(state: IncidentState, config: RunnableConfig, *, store: 
         past_context = f"Failed to access long term memory: {e}"
 
     
-    model_name = get_model_name("diagnostic")
-    
     user_prompt = f"""Diagnose this telemetry payload: {json.dumps(sensor_data)}
 
 Correlation ID for this incident: {correlation_id}
-Model name for DB logging: {model_name}
+Model name for DB logging: gemini-2.5-flash
 
 Past Incident History for this station:
 {past_context}"""

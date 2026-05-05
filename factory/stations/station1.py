@@ -71,7 +71,7 @@ class TemperatureSimulator:
 class VibrationSimulator:
     base_level: float = 5.0
     current: float = 0.0
-    noise: float = 2.0
+    noise: float = 0.3 # Reduced from 2.0 to eliminate normal simulation false positives
     fault_offset: float = 0.0
 
     def update(self, is_running: bool, speed_factor: float = 1.0):
@@ -80,7 +80,7 @@ class VibrationSimulator:
                             + self.fault_offset
                             + random.gauss(0, self.noise))
         else:
-            self.current = 1.0 + random.gauss(0, 0.3)
+            self.current = 1.0 + random.gauss(0, 0.1) # Reduced from 0.3
         self.current = max(0, self.current)
         return round(self.current, 2)
 
@@ -96,7 +96,7 @@ class PowerSimulator:
     idle_power: float = 0.1
     running_power: float = 2.2
     current: float = 0.0
-    noise: float = 0.1
+    noise: float = 0.02 # Reduced from 0.1 to stabilize power readings
     total_energy: float = 0.0
     fault_multiplier: float = 1.0
     _last_update: float = field(default_factory=time.time)
@@ -109,7 +109,7 @@ class PowerSimulator:
             self.current = (self.running_power * self.fault_multiplier
                             + random.gauss(0, self.noise))
         else:
-            self.current = self.idle_power + random.gauss(0, 0.02)
+            self.current = self.idle_power + random.gauss(0, 0.005) # Reduced from 0.02
         self.current = max(0, self.current)
         self.total_energy += (self.current * dt) / 3600.0
         return round(self.current, 3)

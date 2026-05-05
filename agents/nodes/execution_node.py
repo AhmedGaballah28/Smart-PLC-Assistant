@@ -1,3 +1,4 @@
+import os
 import json
 import logging
 import time
@@ -5,11 +6,11 @@ from typing import Dict, Any
 
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableConfig
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.prebuilt import create_react_agent
 from langgraph.store.base import BaseStore
 
 from agents.state import IncidentState
-from agents.llm_factory import get_llm
 from agents.tools.mcp_client import get_mcp_tools
 
 try:
@@ -41,7 +42,11 @@ MUST USE:
    - station_id: "{station_id}" (replacing {station_id} with actual)
 """
 
-llm = get_llm("execution", temperature=0)
+llm = ChatGoogleGenerativeAI(
+    model="gemini-2.5-flash-lite",
+    temperature=0,
+    google_api_key=os.getenv("GOOGLE_API_KEY"),
+)
 
 mcp_tools = []
 try:

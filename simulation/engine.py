@@ -146,7 +146,12 @@ def run_simulation(
     current_state = _extract_current_state(sensor_data, fault_type, station_id)
 
     # Ensure clear_fault is set if the proposal implies it
-    if any(k in proposed_params for k in ("spindle_speed", "aux_fan_speed", "belt_tension")):
+    REPAIR_KEYS = {
+        "spindle_speed", "spindle_speed_rpm", "Spindle_Speed_RPM",
+        "aux_fan_speed", "aux_enclosure_fan_speed_percent", "aux_fan_speed_percent",
+        "belt_tension", "speed_factor", "line_speed_multiplier",
+    }
+    if any(k in proposed_params for k in REPAIR_KEYS):
         proposed_params.setdefault("clear_fault", True)
 
     models = FAULT_TO_MODELS.get(fault_type, [_production])

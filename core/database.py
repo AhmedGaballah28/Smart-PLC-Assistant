@@ -81,7 +81,11 @@ def session_scope() -> Iterator[Session]:
 
 def init_sqlite_database(drop_existing: bool = False, echo: bool = False) -> list[str]:
     """
-    Create database schema using Alembic migrations.
+    Create database schema.
+
+    Tries Alembic migrations first; falls back to SQLAlchemy
+    ``Base.metadata.create_all`` when the ``alembic`` package is
+    shadowed by the local ``alembic/`` migration scripts directory.
 
     Args:
         drop_existing: Drop all existing tables first.
@@ -95,13 +99,16 @@ def init_sqlite_database(drop_existing: bool = False, echo: bool = False) -> lis
     if drop_existing:
         Base.metadata.drop_all(bind=engine)
 
-    # Use Alembic to apply migrations instead of raw create_all
-    from alembic.config import Config
-    from alembic import command
+    try:
+        from alembic.config import Config
+        from alembic import command
 
-    alembic_ini_path = Path(__file__).resolve().parent.parent / "alembic.ini"
-    alembic_cfg = Config(str(alembic_ini_path))
-    command.upgrade(alembic_cfg, "head")
+        alembic_ini_path = Path(__file__).resolve().parent.parent / "alembic.ini"
+        alembic_cfg = Config(str(alembic_ini_path))
+        command.upgrade(alembic_cfg, "head")
+    except (ImportError, ModuleNotFoundError, AttributeError):
+        # Local alembic/ directory shadows the pip package — fall back
+        Base.metadata.create_all(bind=engine)
 
     return get_table_names()
 

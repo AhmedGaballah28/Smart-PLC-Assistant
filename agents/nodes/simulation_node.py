@@ -1,3 +1,4 @@
+import os
 import json
 import logging
 from typing import Dict, Any
@@ -5,11 +6,11 @@ from pydantic import BaseModel, Field
 
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableConfig
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.prebuilt import create_react_agent
 from langgraph.store.base import BaseStore
 
 from agents.state import IncidentState
-from agents.llm_factory import get_llm
 from agents.tools.mcp_client import get_mcp_tools
 from agents.tools.simulation_tools import run_digital_twin, generate_simulation_plots
 
@@ -53,7 +54,11 @@ Think carefully about the model outputs before declaring GO or NO_GO.
 A NO_GO from any physics model should be taken seriously.
 """
 
-llm = get_llm("simulation", temperature=0)
+llm = ChatGoogleGenerativeAI(
+    model="gemini-2.5-flash-lite",
+    temperature=0,
+    google_api_key=os.getenv("GOOGLE_API_KEY"),
+)
 
 tools = [run_digital_twin, generate_simulation_plots]
 try:
@@ -74,13 +79,54 @@ def run_simulation_node(state: IncidentState, config: RunnableConfig, *, store: 
     
     logger.info(f"Simulation node starting for {station_id} (Alert: {correlation_id})")
     
-    # Merge sensor context into parameters so the physics engine gets it
+    # ── Extract real sensor values from the enriched alert payload ──
+    # The aggregator now includes a sensor_snapshot with live readings
+    # (e.g. {"temperature": 57.4, "vibration": 12.3, "power_consumption": 2.8})
+    # plus fault context (active_faults, fault_active).
     sim_input = dict(params)
     if isinstance(sensor_data, dict):
-        for k in ("temperature", "vibration", "power", "severity_level",
-                   "fault_type", "type", "speed_factor"):
+        # 1. Inject real-time sensor readings from the snapshot
+        snapshot = sensor_data.get("sensor_snapshot", {})
+        for k, v in snapshot.items():
+            if k not in sim_input and isinstance(v, (int, float)):
+                # Map aggregator field names to simulation engine names
+                mapped = k
+                if k == "power_consumption":
+                    mapped = "power"
+                sim_input[mapped] = v
+
+        # 2. Use the alert's current value for the specific triggered field
+        field = sensor_data.get("field", "")
+        current_val = sensor_data.get("current")
+        if field and current_val is not None:
+            mapped_field = field
+            if field == "power_consumption":
+                mapped_field = "power"
+            sim_input[mapped_field] = current_val
+
+        # 3. Infer fault type from active_faults or alert field
+        active_faults = sensor_data.get("active_faults", [])
+        if active_faults and "fault_type" not in sim_input:
+            sim_input["fault_type"] = active_faults[0]
+        elif field in ("temperature",) and "fault_type" not in sim_input:
+            sim_input["fault_type"] = "overheat"
+        elif field in ("vibration",) and "fault_type" not in sim_input:
+            sim_input["fault_type"] = "vibration"
+        elif field in ("power_consumption", "power") and "fault_type" not in sim_input:
+            sim_input["fault_type"] = "power"
+
+        # 4. Map severity string to integer for the physics engine
+        sev = sensor_data.get("severity", "")
+        if isinstance(sev, str) and "severity_level" not in sim_input:
+            sev_map = {"info": 1, "warning": 3, "critical": 4}
+            sim_input["severity_level"] = sev_map.get(sev, 3)
+
+        # 5. Pass through any direct keys the engine understands
+        for k in ("type", "speed_factor", "fan_speed"):
             if k in sensor_data and k not in sim_input:
                 sim_input[k] = sensor_data[k]
+
+    logger.info(f"Simulation input for {station_id}: {json.dumps(sim_input, default=str)}")
     
     user_prompt = f"""Run simulation for station {station_id} with these proposed parameters:
 

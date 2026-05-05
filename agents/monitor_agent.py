@@ -9,6 +9,10 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Enable LangChain verbose tracing — shows tool calls, LLM inputs/outputs
+from langchain_core.globals import set_verbose, set_debug
+set_verbose(True)
+
 from core.mqtt_client import MQTTClient
 from core.repository import DbRepository
 from agents.supervisor_graph import supervisor_app
@@ -51,12 +55,15 @@ class MonitorAgent:
             except json.JSONDecodeError:
                 return
                 
-        # Expected payload format from realtime_aggregator.py:
-        # { "type": "TOLERANCE_EXCEEDED", "sensor": "machining_temp", "value": 75, "station_id": "mc_a", "line_id": "line1" ... }
+        # Aggregator publishes to: agents/monitor/{line_id}/alert
+        # Payload format: { "station": "stn1", "type": "threshold", "severity": "critical",
+        #                    "field": "temperature", "message": "temperature=72 exceeds CRITICAL (70)" }
         
-        station_id = payload.get("station_id", "unknown_station")
-        line_id = payload.get("line_id", "unknown_line")
-        metric_str = payload.get("sensor", "unknown_sensor")
+        station_id = payload.get("station", "unknown_station")
+        # line_id is NOT in the payload — extract from MQTT topic
+        topic_parts = topic.split("/")
+        line_id = topic_parts[2] if len(topic_parts) >= 4 else "unknown_line"
+        metric_str = payload.get("field", payload.get("message", "unknown_metric"))
         alert_type = payload.get("type", "UNKNOWN_ALERT")
         
         # Simple dampening

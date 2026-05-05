@@ -385,12 +385,17 @@ class StationStats:
                     self._sensors[field].append((now, float(val)))
                     self._update_baseline(field, float(val), now)
 
+            # Only track these specifically as fault-driven "effects" if they are bad counters
+            # Good counters like 'products_completed' naturally increase during regular operation!
+            FAULT_METRICS = {"store_errors", "belt_stutters", "brownouts", "sensor_misreads", 
+                             "vision_errors", "sorter_jams", "misroutes", "gripper_failures"}
+                             
             for field in COUNTER_FIELDS:
                 val = flat.get(field)
                 if val is not None and isinstance(val, (int, float)):
                     val = int(val)
                     prev = self._counter_prev.get(field, val)
-                    if val > prev:
+                    if val > prev and field in FAULT_METRICS:
                         self._fault_effects[field] = (
                             self._fault_effects.get(field, 0) + (val - prev)
                         )
@@ -574,11 +579,13 @@ class StationStats:
                     continue
                 _, current = values[-1]
                 z = abs(current - baseline["mean"]) / baseline["std"]
-                if z > 3.0:
+                # Only trigger anomaly if the value spiked ABOVE normal. 
+                # Dropping below normal just means the machine turned off or cooled down.
+                if z > 4.5 and current > baseline["mean"]: 
                     anomalies.append({
                         "field": field,
                         "type": "z_score",
-                        "severity": "critical" if z > 5.0 else "warning",
+                        "severity": "critical" if z > 6.0 else "warning",
                         "current": round(current, 2),
                         "z_score": round(z, 1),
                         "message": (
@@ -612,6 +619,11 @@ class StationStats:
             if not values:
                 continue
             _, current = values[-1]
+            
+            # Avoid triggering gauge alerts when production has just started and rates are volatile
+            if self._products_completed < 3 and field in ["pass_rate", "good_rate"]:
+                continue
+                
             if "critical_below" in thresh and current < thresh["critical_below"]:
                 anomalies.append({
                     "field": field, "type": "gauge_low",
@@ -720,12 +732,25 @@ class LineAggregator:
 
                 for anomaly in summary.get("anomalies", []):
                     health_issues += 1
+                    # Build a sensor snapshot so downstream agents
+                    # (simulation, diagnostic) can use real readings
+                    sensor_snapshot = {
+                        f: s["current"]
+                        for f, s in summary.get("sensors", {}).items()
+                        if "current" in s
+                    }
                     report["alerts"].append({
                         "station": name,
                         "type": anomaly.get("type", "anomaly"),
                         "severity": anomaly["severity"],
                         "field": anomaly["field"],
+                        "current": anomaly.get("current"),
+                        "z_score": anomaly.get("z_score"),
                         "message": anomaly["message"],
+                        # Real-time sensor context for the AI agents
+                        "sensor_snapshot": sensor_snapshot,
+                        "fault_active": summary.get("fault_active", False),
+                        "active_faults": summary.get("active_faults", []),
                     })
 
                 if summary["last_update_ago"] > 10:

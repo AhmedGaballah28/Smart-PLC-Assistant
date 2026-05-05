@@ -1500,10 +1500,13 @@ class FaultInjectionManager:
         all_keys = ["mc_a", "mc_b", "stn1", "stn2", "stn3",
                      "stn6", "stn7", "transfer", "warehouse"]
 
-        def _handler(client, userdata, msg):
+        def _handler(topic, payload):
             try:
-                payload = json.loads(msg.payload.decode())
-                topic = msg.topic
+                # payload is already parsed by MQTTClient._on_message
+                if isinstance(payload, str):
+                    payload = json.loads(payload)
+
+                logger.info(f"🔧 MQTT fault received: {topic} → {payload}")
 
                 # Parse topic to determine target
                 parts = topic.split("/")
@@ -1547,7 +1550,7 @@ class FaultInjectionManager:
                         )
 
             except Exception as e:
-                logger.debug(f"MQTT fault handler error: {e}")
+                logger.warning(f"MQTT fault handler error: {e}")
 
         # Subscribe to all topics
         topics = ["factory/faults/inject"]
@@ -1601,10 +1604,11 @@ class CommandHandler:
         all_keys = ["mc_a", "mc_b", "stn1", "stn2", "stn3",
                      "stn6", "stn7", "transfer", "warehouse"]
 
-        def _on_command(client_obj, userdata, msg):
+        def _on_command(topic, payload):
             try:
-                payload = json.loads(msg.payload.decode())
-                topic = msg.topic
+                # payload is already parsed by MQTTClient._on_message
+                if isinstance(payload, str):
+                    payload = json.loads(payload)
                 parts = topic.split("/")
 
                 # Expected: factory/{line_id}/{station_key}/commands/{action}

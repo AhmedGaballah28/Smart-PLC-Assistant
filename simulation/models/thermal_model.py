@@ -222,14 +222,21 @@ class ThermalModel(BaseModel):
 
         # "After" scenario: proposed changes applied
         speed_after = speed_now
-        if "spindle_speed" in proposed_params:
-            speed_after = proposed_params["spindle_speed"] / 3000.0
+        # Accept multiple naming conventions from repair agents
+        spindle_rpm = (proposed_params.get("spindle_speed")
+                       or proposed_params.get("spindle_speed_rpm")
+                       or proposed_params.get("Spindle_Speed_RPM"))
+        if spindle_rpm is not None:
+            speed_after = float(spindle_rpm) / 3000.0
         if "speed_factor" in proposed_params:
             speed_after = proposed_params["speed_factor"]
         if "line_speed_multiplier" in proposed_params:
             speed_after = proposed_params["line_speed_multiplier"]
 
-        fan_after = proposed_params.get("aux_fan_speed", fan_now)
+        fan_after = (proposed_params.get("aux_fan_speed")
+                     or proposed_params.get("aux_enclosure_fan_speed_percent")
+                     or proposed_params.get("aux_fan_speed_percent")
+                     or fan_now)
         sev_after = 0 if proposed_params.get("clear_fault", False) else fault_sev
 
         after = self._run_scenario(
