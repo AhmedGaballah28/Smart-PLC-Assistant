@@ -12,7 +12,9 @@ PROJECT_ROOT = os.path.dirname(CORE_DIR)
 KB_FILE_PATH = os.path.join(PROJECT_ROOT, "knowledge_base", "factory_troubleshooting_manual.md")
 CHROMA_DB_DIR = os.path.join(PROJECT_ROOT, "data", "chroma_db")
 
-embedding_model = HuggingFaceEmbeddings(model="sentence-transformers/all-MiniLM-L6-v2")
+embedding_model = HuggingFaceEmbeddings(
+    model="sentence-transformers/all-MiniLM-L6-v2",
+)
 
 # def initialize_knowledge_base():
 #     """Reads the Markdown manual, splits it by headers, and stores it in ChromaDB."""

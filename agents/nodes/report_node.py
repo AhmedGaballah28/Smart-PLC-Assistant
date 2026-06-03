@@ -56,6 +56,9 @@ llm = ChatGoogleGenerativeAI(
     model="gemini-2.5-flash-lite",
     temperature=0.2,
     google_api_key=os.getenv("GOOGLE_API_KEY"),
+    vertexai=True,
+    project="graduation-project-498314",
+    location="global"
 )
 
 report_agent = create_react_agent(llm, [search_factory_manual], prompt=REPORT_SYSTEM_PROMPT, response_format=ReportOutput)
