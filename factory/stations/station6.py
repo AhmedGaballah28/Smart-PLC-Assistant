@@ -366,6 +366,96 @@ class Station6:
     def stop(self):
         self.running = False
 
+    # ──────────────────────────────────────
+    # Fault Injection / Clearing
+    # ──────────────────────────────────────
+    def inject_fault(self, fault_type, severity=3):
+        """Inject a fault into this station.
+
+        Supported fault types: overheat, power, belt_slip, sensor_drift, vision_error
+        Severity: 1-5
+        """
+        severity = max(1, min(5, int(severity)))
+        self.active_faults[fault_type] = severity
+        self.fault_counters[fault_type] = self.fault_counters.get(fault_type, 0) + 1
+        print(f"[STN6] ⚡ FAULT INJECTED: {fault_type} severity={severity}")
+
+    def clear_fault(self, fault_type="all"):
+        """Clear active fault(s) and reset station state if stuck.
+
+        Args:
+            fault_type: specific fault name or "all" to clear everything
+        """
+        if fault_type == "all":
+            cleared = list(self.active_faults.keys())
+            self.active_faults.clear()
+            print(f"[STN6] ✅ ALL faults cleared: {cleared}")
+        elif fault_type in self.active_faults:
+            del self.active_faults[fault_type]
+            print(f"[STN6] ✅ Fault cleared: {fault_type}")
+        else:
+            print(f"[STN6] ⚠️ No active fault '{fault_type}' to clear")
+
+        # If station is stuck (state != 0 and not actively processing),
+        # reset state machine to allow recovery
+        if self.state != 0 and not self.active_faults:
+            old_state = self.state
+            self.state = 0
+            print(f"[STN6] 🔄 State reset from {old_state} → 0 (recovery)")
+
+    def get_status(self):
+        """Return current station status for telemetry and fault manager."""
+        rate = (self.pass_count / self.product_count * 100) if self.product_count > 0 else 100.0
+        return {
+            "station_id": getattr(self, "STATION_ID", "station_6"),
+            "state": self.state,
+            "running": self.running,
+            "product_count": self.product_count,
+            "pass_count": self.pass_count,
+            "fail_count": self.fail_count,
+            "pass_rate": round(rate, 1),
+            "last_qc_result": self.last_qc_result,
+            "last_vision_value": self.last_vision_value,
+            "faults": {
+                "has_fault": bool(self.active_faults),
+                "active": list(self.active_faults.keys()),
+                "details": dict(self.active_faults),
+            },
+        }
+
+    def apply_parameters(self, params: dict):
+        """Apply runtime parameter changes from the AI agent.
+
+        Supported keys:
+          clear_fault (str|bool): fault type to clear, or True for "all"
+          fan_speed (float): cooling fan percentage 0-100
+          speed_factor (float): processing speed multiplier 0.1-2.0
+          target_belt_speed (float): belt speed target 10-100
+        """
+        print(f"[STN6] 🔧 apply_parameters: {params}")
+
+        # Clear faults
+        cf = params.get("clear_fault")
+        if cf:
+            fault_type = cf if isinstance(cf, str) and cf not in ("True", "true") else "all"
+            self.clear_fault(fault_type)
+
+        # Fan speed — affects inspection timing (simulates cooling)
+        if "fan_speed" in params:
+            fan = max(0, min(100, float(params["fan_speed"])))
+            print(f"[STN6]   Fan speed → {fan}%")
+
+        # Speed factor — could affect inspection time
+        if "speed_factor" in params:
+            sf = max(0.1, min(2.0, float(params["speed_factor"])))
+            self.INSPECT_TIME = 3.0 / sf
+            print(f"[STN6]   Speed factor → {sf} (inspect_time={self.INSPECT_TIME:.1f}s)")
+
+        # Belt speed target
+        if "target_belt_speed" in params:
+            tbs = max(10, min(100, float(params["target_belt_speed"])))
+            print(f"[STN6]   Belt speed target → {tbs}%")
+
 
 # ═══════════════════════════════════════════════════════
 # Synced version (for multi-station line)
@@ -395,6 +485,14 @@ class SyncedStation6(Station6):
             self.downstream_ready.clear()
             print("[STN6] ✅ Downstream ready — releasing")
         super().blade(up)
+
+    def clear_fault(self, fault_type="all"):
+        """Override: also unblock downstream_ready to break deadlock."""
+        # Unblock if stuck waiting for downstream in blade(False)
+        if self.downstream_ready and self.state == 4:
+            print("[STN6] 🔓 Unblocking downstream_ready event (deadlock recovery)")
+            self.downstream_ready.set()
+        super().clear_fault(fault_type)
 
     def run(self):
         """Alias for main() to be compatible with thread targets in master script"""
@@ -429,14 +527,18 @@ class SyncedStation6(Station6):
                 self._signal_ready()
 
                 print("[STN6] ⏳ Waiting for product...")
-                while self.running:
+                while self.running and self.state == 0:
+                    # Continually signal ready while idle, in case upstream timed out
+                    # and consumed the ready event but never sent a product
+                    self._signal_ready()
+                    
                     sensors = self.read_sensors()
                     if sensors["sensor_6"]:
                         break
                     time.sleep(0.05)
 
-                if not self.running:
-                    break
+                if not self.running or self.state != 0:
+                    continue
 
                 self.cycle_start_time = time.time()
                 print("[STN6] 📦 Product detected!")
@@ -486,11 +588,18 @@ class SyncedStation6(Station6):
 
             # ── STATE 5: EXITING ──
             elif self.state == 5:
-                while self.running:
+                exit_start = time.time()
+                while self.running and self.state == 5:
                     sensors = self.read_sensors()
                     if not sensors["sensor_6"]:
                         break
+                    if time.time() - exit_start > 3.0:
+                        print("[STN6] ⚠️ Exit sensor didn't clear (tailgating?), proceeding anyway")
+                        break
                     time.sleep(0.05)
+
+                if not self.running or self.state != 5:
+                    continue
 
                 time.sleep(0.5)
                 self.lights_off()

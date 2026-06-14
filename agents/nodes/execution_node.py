@@ -47,8 +47,7 @@ llm = ChatGoogleGenerativeAI(
     temperature=0,
     google_api_key=os.getenv("GOOGLE_API_KEY"),
     vertexai=True,
-    project="graduation-project-498314",
-    location="global"
+    project="graduation-project-498314"
 )
 
 mcp_tools = []
@@ -79,35 +78,43 @@ def _publish_mqtt_commands(station_id: str, line_id: str, final_params: dict) ->
             logger.warning("MQTT connect failed — commands not published")
             return False
 
-        base_topic = f"factory/{line_id}/{station_id}/commands"
+        target_station = final_params.get("target_station", station_id)
+        if target_station != station_id:
+            logger.info(f"MQTT: Re-routing repair command from {station_id} to {target_station}")
+
+        base_topic = f"factory/{line_id}/{target_station}/commands"
 
         # Clear active faults if the repair calls for it
         clear_fault = final_params.get("clear_fault", False)
         fault_type = final_params.get("fault_type_to_clear", "all")
         if clear_fault:
-            client.publish(f"{base_topic}/clear", {
+            payload = {
                 "action": "clear",
                 "fault_type": fault_type,
-                "station_id": station_id,
+                "clear": fault_type,  # Legacy support for LineStation6/7
+                "station_id": target_station,
                 "line_id": line_id,
                 "timestamp": time.time(),
-            })
-            logger.info(f"MQTT: Published fault clear to {base_topic}/clear "
+            }
+            client.publish(f"{base_topic}/clear", payload)
+            # Also publish to the legacy topic that tests/run_line.py actually listens to
+            client.publish(f"factory/{target_station}/faults/inject", payload)
+            logger.info(f"MQTT: Published fault clear to {base_topic}/clear and factory/{target_station}/faults/inject "
                         f"(fault_type={fault_type})")
 
-        # Apply parameter changes
-        apply_params = {k: v for k, v in final_params.items()
-                        if k not in ("clear_fault", "fault_type_to_clear",
-                                     "action", "description")}
+        # Publish physical parameter changes
+        apply_params = {k: v for k, v in final_params.items() if k not in ["clear_fault", "fault_type_to_clear", "target_station"]}
         if apply_params:
-            client.publish(f"{base_topic}/apply", {
+            payload = {
+                "action": "apply",
                 "parameters": apply_params,
-                "station_id": station_id,
+                "station_id": target_station,
                 "line_id": line_id,
                 "timestamp": time.time(),
-            })
-            logger.info(f"MQTT: Published parameter apply to {base_topic}/apply: "
-                        f"{apply_params}")
+            }
+            client.publish(f"{base_topic}/apply", payload)
+            logger.info(f"MQTT: Published physical parameters to {base_topic}/apply "
+                        f"({apply_params})")
 
         return True
     except Exception as e:

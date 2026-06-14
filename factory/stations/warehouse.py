@@ -750,11 +750,74 @@ class WarehouseController:
         self.running = False
         self.is_running = False
 
+    # ─── Fault Injection / Clearing ──────────────────────────────
+
+    def inject_fault(self, fault_type, severity=3):
+        """Inject a fault into this station.
+
+        Supported fault types: overheat, power, belt_slip, sensor_drift, crane_jam, stacker_error
+        Severity: 1-5
+        """
+        severity = max(1, min(5, int(severity)))
+        if not hasattr(self, "active_faults"):
+            self.active_faults = {}
+        if not hasattr(self, "fault_counters"):
+            self.fault_counters = {}
+        self.active_faults[fault_type] = severity
+        self.fault_counters[fault_type] = self.fault_counters.get(fault_type, 0) + 1
+        logger.info(f"WH ({self.WH_ID}) ⚡ FAULT INJECTED: {fault_type} severity={severity}")
+
+    def clear_fault(self, fault_type="all"):
+        """Clear active fault(s) and reset station state if stuck."""
+        if not hasattr(self, "active_faults"):
+            self.active_faults = {}
+        if fault_type == "all":
+            cleared = list(self.active_faults.keys())
+            self.active_faults.clear()
+            logger.info(f"WH ({self.WH_ID}) ✅ ALL faults cleared: {cleared}")
+        elif fault_type in self.active_faults:
+            del self.active_faults[fault_type]
+            logger.info(f"WH ({self.WH_ID}) ✅ Fault cleared: {fault_type}")
+        else:
+            logger.info(f"WH ({self.WH_ID}) ⚠️ No active fault '{fault_type}' to clear")
+
+        # Reset state if stuck
+        if self.state not in ("idle", "wait_product") and not getattr(self, "active_faults", {}):
+            old_state = self.state
+            self.state = "idle"
+            logger.info(f"WH ({self.WH_ID}) 🔄 State reset from {old_state} → idle (recovery)")
+
+    def apply_parameters(self, params: dict):
+        """Apply runtime parameter changes from the AI agent.
+
+        Supported keys:
+          clear_fault (str|bool): fault type to clear, or True for "all"
+          fan_speed (float): cooling fan percentage 0-100
+          speed_factor (float): crane speed multiplier 0.1-2.0
+        """
+        logger.info(f"WH ({self.WH_ID}) 🔧 apply_parameters: {params}")
+
+        cf = params.get("clear_fault")
+        if cf:
+            fault_type = cf if isinstance(cf, str) and cf not in ("True", "true") else "all"
+            self.clear_fault(fault_type)
+
+        if "fan_speed" in params:
+            fan = max(0, min(100, float(params["fan_speed"])))
+            logger.info(f"WH ({self.WH_ID})   Fan speed → {fan}%")
+
+        if "speed_factor" in params:
+            sf = max(0.1, min(2.0, float(params["speed_factor"])))
+            logger.info(f"WH ({self.WH_ID})   Speed factor → {sf}")
+
     def get_status(self):
         filled = len(self.occupied)
         pct = (filled / self.MAX_CELLS * 100) if self.MAX_CELLS > 0 else 0
+        faults = getattr(self, "active_faults", {})
         return {
+            'station_id': self.WH_ID,
             'state': self.state,
+            'running': self.running,
             'counters': {
                 'products_stored': self.products_stored,
                 'products_retrieved': self.products_retrieved,
@@ -766,6 +829,11 @@ class WarehouseController:
                 'capacity': self.MAX_CELLS,
                 'fill_percent': round(pct, 1),
                 'last_cell': self.last_cell_used,
+            },
+            'faults': {
+                'has_fault': bool(faults),
+                'active': list(faults.keys()),
+                'details': dict(faults),
             },
         }
 

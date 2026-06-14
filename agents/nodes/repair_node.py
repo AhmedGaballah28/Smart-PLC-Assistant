@@ -54,16 +54,12 @@ CRITICAL — VALID PARAMETER NAMES AND RANGES:
 You MUST ONLY use these exact parameter keys in parameters_to_change (numeric values only, no strings):
 
   spindle_speed        — RPM, min=1000, max=4000, default=3000
-  aux_fan_speed        — %, min=0, max=100, default=50
-  system_pressure_setpoint — bar, min=4.0, max=7.0, default=6.0
-  actuator_speed       — %, min=20, max=100, default=80
-  line_speed_multiplier — x, min=0.5, max=1.0, default=1.0
-  vfd_smoothing        — level, min=0, max=5, default=0
-  camera_exposure_time — ms, min=1, max=20, default=5
-  belt_tension         — %, min=40, max=90, default=70
-  transfer_arm_speed   — %, min=10, max=80, default=60
+  fan_speed            — %, min=0, max=100, default=50
+  speed_factor         — x, min=0.1, max=2.0, default=1.0
+  target_belt_speed    — %, min=10, max=100, default=50
   clear_fault          — boolean true/false, clears the active fault on the station
   fault_type_to_clear  — string: specific fault name or "all"
+  target_station       — string: station ID to send the command to (e.g. "stn6"). Use this if the root cause is at a downstream station!
 
 Do NOT invent parameter names. Do NOT use strings for numeric values.
 
@@ -79,8 +75,7 @@ llm = ChatGoogleGenerativeAI(
     temperature=0,
     google_api_key=os.getenv("GOOGLE_API_KEY"),
     vertexai=True,
-    project="graduation-project-498314",
-    location="global"
+    project="graduation-project-498314"
 )
 
 tools = [search_factory_manual]

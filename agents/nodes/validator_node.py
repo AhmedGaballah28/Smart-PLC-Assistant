@@ -32,12 +32,14 @@ You MUST check:
 2. Does the repair follow factory policy and established procedures?
 3. Are there any dangerous side effects or interactions between changed parameters?
 4. Is the root cause diagnosis sound and does the repair actually address it?
-5. CRITICAL: Provide AT LEAST ONE physical parameter adjustment (like spindle_speed, aux_fan_speed, transfer_arm_speed) alongside ANY 'clear_fault' command. Never approve a repair that ONLY contains 'clear_fault' and 'fault_type_to_clear' with no other parameters.
+5. CRITICAL: Provide AT LEAST ONE physical parameter adjustment (like spindle_speed, fan_speed, target_belt_speed, speed_factor) alongside ANY 'clear_fault' command. Never approve a repair that ONLY contains 'clear_fault' and 'fault_type_to_clear' with no other parameters. Note that for Stations 6, 7, 8, and 9 you still MUST include a physical parameter (like fan_speed) to pass validation, even though they only use it to clear the fault.
 
 If ANY concern is found, set verdict to "FAIL" and list ALL concerns.
 If everything checks out, set verdict to "PASS" with an empty concerns list.
 
 Be strict — safety is paramount in industrial environments.
+
+CRITICAL SIMULATION RULE: This is a digital twin. Automated software parameter changes (like `clear_fault` + `fan_speed`) ARE the only mechanism to resolve "physical" faults in this environment. Do NOT reject a proposal simply because it lacks human physical intervention or physical inspection.
 
 IMPORTANT: The user message will provide the event's correlation_id.
 After validation, use the 'save_validation_result' MCP tool (if available) to log:
@@ -53,8 +55,7 @@ llm = ChatGoogleGenerativeAI(
     temperature=0,
     google_api_key=os.getenv("GOOGLE_API_KEY"),
     vertexai=True,
-    project="graduation-project-498314",
-    location="global"
+    project="graduation-project-498314"
 )
 
 tools = [search_factory_manual]

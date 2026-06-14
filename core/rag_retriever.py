@@ -14,6 +14,7 @@ CHROMA_DB_DIR = os.path.join(PROJECT_ROOT, "data", "chroma_db")
 
 embedding_model = HuggingFaceEmbeddings(
     model="sentence-transformers/all-MiniLM-L6-v2",
+    cache_folder=os.path.join(PROJECT_ROOT, "data", "models"),
 )
 
 # def initialize_knowledge_base():

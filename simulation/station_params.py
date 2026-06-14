@@ -251,14 +251,9 @@ FAULT_PROBABILITIES = {
 
 SAFE_BOUNDS = {
     "spindle_speed": {"min": 1000, "max": 4000, "default": 3000, "unit": "RPM"},
-    "aux_fan_speed": {"min": 0, "max": 100, "default": 50, "unit": "%"},
-    "system_pressure_setpoint": {"min": 4.0, "max": 7.0, "default": 6.0, "unit": "bar"},
-    "actuator_speed": {"min": 20, "max": 100, "default": 80, "unit": "%"},
-    "line_speed_multiplier": {"min": 0.5, "max": 1.0, "default": 1.0, "unit": "x"},
-    "vfd_smoothing": {"min": 0, "max": 5, "default": 0, "unit": "level"},
-    "camera_exposure_time": {"min": 1, "max": 20, "default": 5, "unit": "ms"},
-    "belt_tension": {"min": 40, "max": 90, "default": 70, "unit": "%"},
-    "transfer_arm_speed": {"min": 10, "max": 80, "default": 60, "unit": "%"},
+    "fan_speed": {"min": 0, "max": 100, "default": 50, "unit": "%"},
+    "speed_factor": {"min": 0.1, "max": 2.0, "default": 1.0, "unit": "x"},
+    "target_belt_speed": {"min": 10, "max": 100, "default": 50, "unit": "%"},
 }
 
 # ═══════════════════════════════════════════════════════════════════

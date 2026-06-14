@@ -148,8 +148,8 @@ def run_simulation(
     # Ensure clear_fault is set if the proposal implies it
     REPAIR_KEYS = {
         "spindle_speed", "spindle_speed_rpm", "Spindle_Speed_RPM",
-        "aux_fan_speed", "aux_enclosure_fan_speed_percent", "aux_fan_speed_percent",
-        "belt_tension", "speed_factor", "line_speed_multiplier",
+        "fan_speed", "aux_fan_speed", "aux_enclosure_fan_speed_percent", "aux_fan_speed_percent",
+        "target_belt_speed", "belt_tension", "speed_factor", "line_speed_multiplier",
     }
     if any(k in proposed_params for k in REPAIR_KEYS):
         proposed_params.setdefault("clear_fault", True)

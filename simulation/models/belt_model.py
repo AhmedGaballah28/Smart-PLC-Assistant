@@ -213,10 +213,12 @@ class BeltModel(BaseModel):
 
         # Apply proposed changes
         speed_after = speed_now
-        if "line_speed_multiplier" in proposed_params:
+        if "speed_factor" in proposed_params:
+            speed_after = speed_now * proposed_params["speed_factor"]
+        elif "line_speed_multiplier" in proposed_params:
             speed_after = speed_now * proposed_params["line_speed_multiplier"]
 
-        tension_after = proposed_params.get("belt_tension", tension_now)
+        tension_after = proposed_params.get("target_belt_speed", proposed_params.get("belt_tension", tension_now))
         clear = proposed_params.get("clear_fault", False)
         slip_after = 0 if clear else slip_sev
         power_after = 0 if clear else power_sev

@@ -811,6 +811,7 @@ class LineStation6(SyncedStation6):
                 if fault_type == "overheat":
                     self.INSPECT_TIME = self._original_inspect_time
                     logger.info(f"  🔧 STN6: Inspect time restored to {self.INSPECT_TIME:.1f}s")
+        super().clear_fault(fault_type)
 
     # ── Method overrides for REAL fault effects ──
 

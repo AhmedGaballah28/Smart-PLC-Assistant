@@ -7,6 +7,9 @@ data/*.db-shm
 data/*.db-wal
 data/run_*/
 data/chroma_db/
+data/*
+docs/*
+!docs/agent_architecture.md
 .vscode/
 .idea/
 *.log
@@ -14,3 +17,4 @@ data/chroma_db/
 Thumbs.db
 implementation_plan.md
 graduation-project-498314-b00ff60aaf43.json
+Graduation Project Report.pdf

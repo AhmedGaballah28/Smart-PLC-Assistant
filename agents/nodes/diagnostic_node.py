@@ -50,8 +50,7 @@ llm = ChatGoogleGenerativeAI(
     temperature=0,
     google_api_key=os.getenv("GOOGLE_API_KEY"),
     vertexai=True,
-    project="graduation-project-498314",
-    location="global"
+    project="graduation-project-498314"
 )
 
 tools = [search_factory_manual]
