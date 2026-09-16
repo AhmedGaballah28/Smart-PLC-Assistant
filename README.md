@@ -876,3 +876,7 @@ Built as a graduation project in Mechatronics Engineering — demonstrating that
 ## Documentation Update
 
 This section was added as part of the project documentation updates.
+
+## Project Notes
+
+This project is being developed as part of a graduation project.
