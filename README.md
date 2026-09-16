@@ -873,3 +873,6 @@ Node ≥ 18 is required (`package.json` `engines`); the server listens on port `
 Built as a graduation project in Mechatronics Engineering — demonstrating that autonomous industrial AI is not a future concept, it is an engineering problem with a working solution.
 
 </div>
+## Documentation Update
+
+This section was added as part of the project documentation updates.
