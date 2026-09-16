@@ -24,7 +24,7 @@ ADDRESS MAP:
 # =============================================================================
 # MODBUS CONNECTION (Factory I/O)
 # =============================================================================
-MODBUS_HOST = "127.0.0.1"
+MODBUS_HOST = "192.168.101.160"
 MODBUS_PORT = 502
 MODBUS_SLAVE_ID = 1
 MODBUS_TIMEOUT = 5.0
@@ -199,7 +199,7 @@ MACHINING_A_CONFIG = {
     "registers": {"progress": 1},
     "timing": {
         "emitter_pulse": 0.5, "load_timeout": 30.0,
-        "machining_timeout": 30.0, "exit_timeout": 5.0,
+        "machining_timeout": 30.0, "exit_timeout": 10.0,
         "settle_time": 0.5, "reset_pulse": 1.0,
     },
     "simulation": {
@@ -231,7 +231,7 @@ MACHINING_B_CONFIG = {
     "registers": {"progress": 2},
     "timing": {
         "emitter_pulse": 0.5, "load_timeout": 30.0,
-        "machining_timeout": 45.0, "exit_timeout": 10.0,
+        "machining_timeout": 45.0, "exit_timeout": 20.0,
         "settle_time": 0.5, "reset_pulse": 1.0,
     },
     "simulation": {

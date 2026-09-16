@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Smart PLC Assistant Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-layout">
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+          <div class="logo-icon">PLC</div>
+          <span class="logo-text">Smart PLC</span>
+        </div>
+        <nav class="sidebar-nav" id="sidebarNav" aria-label="Dashboard views"></nav>
+        <div class="sidebar-footer">
+          <button class="toggle-sidebar-btn" id="toggleSidebarBtn" title="Collapse sidebar" aria-label="Collapse sidebar">‹</button>
+        </div>
+      </aside>
+
+      <div class="main-container">
+        <header class="topbar">
+          <div class="topbar-left">
+            <span class="eyebrow">Human-Agent Collaborative Control Center</span>
+            <h1>Smart PLC Assistant</h1>
+          </div>
+          <div class="topbar-actions">
+            <button class="launcher-btn stopped" id="projectLauncherBtn">
+              <span class="launcher-icon">▶</span>
+              <span class="launcher-text">Open Factory I/O, Then Start Project</span>
+            </button>
+            <div class="system-pill" id="systemStatusPill">
+              <span class="status-light red"></span>
+              <span>Dashboard API offline</span>
+            </div>
+          </div>
+        </header>
+
+        <section class="flow-section" aria-label="Agent decision flow">
+          <div class="flow-section-header">
+            <div class="incident-status-bar" id="incidentStatusBar">
+              <span class="incident-id">No active incident</span>
+              <span class="incident-status-badge">IDLE</span>
+            </div>
+            <button class="icon-button" id="advanceFlowBtn" title="Advance workflow preview" aria-label="Advance workflow preview">
+              <span>▶</span>
+            </button>
+          </div>
+          <div class="pipeline-container" id="pipelineContainer"></div>
+        </section>
+
+        <section class="workspace">
+          <section class="tab-panel" id="tabPanel" aria-live="polite"></section>
+        </section>
+      </div>
+    </div>
+
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script type="module" src="./src/app.js"></script>
+  </body>
+</html>

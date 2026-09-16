@@ -24,7 +24,7 @@ MQTT_CLIENT_ID_PREFIX = "smart_plc"
 # =============================================================================
 # FACTORY I/O (MODBUS) CONFIGURATION
 # =============================================================================
-FACTORY_MODBUS_HOST = os.getenv("FACTORY_MODBUS_HOST", "127.0.0.1")
+FACTORY_MODBUS_HOST = os.getenv("FACTORY_MODBUS_HOST", "192.168.101.160")
 FACTORY_MODBUS_PORT = int(os.getenv("FACTORY_MODBUS_PORT", 502))
 FACTORY_MODBUS_SLAVE_ID = int(os.getenv("FACTORY_MODBUS_SLAVE_ID", 1))
 FACTORY_SCALE_FACTOR = float(os.getenv("FACTORY_SCALE_FACTOR", 100.0))

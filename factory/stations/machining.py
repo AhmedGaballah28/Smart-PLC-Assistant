@@ -683,6 +683,11 @@ class MachiningBaseController(MachiningCenterController):
         logger.info(f"{self.STATION_ID} ┃ STATE 4: Blue Base → Station 1")
         self.state = "exit_to_stn1"
 
+        if "exit_sensor" in self._io:
+            logger.info(f"{self.STATION_ID} ┃ ⏳ Waiting for base to reach exit bay...")
+            self._wait_for(self.read_exit_sensor, timeout=self._timing["exit_timeout"],
+                           state_name="wait_exit_detect")
+
         if self._downstream_ready is not None:
             logger.info(f"{self.STATION_ID} ┃ ⏳ Waiting for Station 1 ready...")
             while self.is_running and not self._downstream_ready.is_set():
@@ -695,14 +700,15 @@ class MachiningBaseController(MachiningCenterController):
             logger.info(f"{self.STATION_ID} ┃ ✅ Station 1 ready!")
 
         self.exit_belt(True)
+        
         if "exit_sensor" in self._io:
-            self._wait_for(self.read_exit_sensor, timeout=self._timing["exit_timeout"],
-                           state_name="wait_exit_detect")
+            logger.info(f"{self.STATION_ID} ┃ ⏳ Waiting for base to leave exit bay...")
             self._wait_for(lambda: not self.read_exit_sensor(),
                            timeout=self._timing["exit_timeout"],
                            state_name="wait_exit_clear")
         else:
             self._wait_seconds(4.0, "exit_travel")
+            
         self.exit_belt(False)
         logger.info(f"{self.STATION_ID} ┃ ✅ Base sent to Station 1!")
 
@@ -727,17 +733,21 @@ class MachiningLidController(MachiningCenterController):
         self.state = "wait_pickup"
 
         if self._lid_ready is not None:
-            self._lid_ready.set()
-            logger.info(f"{self.STATION_ID} ┃ 📢 Signaled STN2: lid ready!")
-
             if "exit_sensor" in self._io:
-                logger.info(f"{self.STATION_ID} ┃ ⏳ Waiting for P&P pickup...")
+                logger.info(f"{self.STATION_ID} ┃ ⏳ Waiting for lid to reach exit bay...")
                 self._wait_for(self.read_exit_sensor, timeout=self._timing["exit_timeout"],
                                state_name="wait_lid_on_bay")
+                
+                self._lid_ready.set()
+                logger.info(f"{self.STATION_ID} ┃ 📢 Signaled STN2: lid ready!")
+
+                logger.info(f"{self.STATION_ID} ┃ ⏳ Waiting for P&P pickup...")
                 self._wait_for(lambda: not self.read_exit_sensor(),
                                timeout=self._timing["exit_timeout"],
                                state_name="wait_pickup")
             else:
+                self._lid_ready.set()
+                logger.info(f"{self.STATION_ID} ┃ 📢 Signaled STN2: lid ready!")
                 logger.info(f"{self.STATION_ID} ┃ ⏳ Waiting for lid_ready consumed...")
                 while self.is_running and self._lid_ready.is_set():
                     self._update_simulations(False)

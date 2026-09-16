@@ -120,7 +120,7 @@ smart_plc_assistant/
 | `get_statistics()`             | Returns read/write/error counts |
 
 **Connection defaults** (`factory/config.py`):
-- Host: `127.0.0.1`
+- Host: `192.168.101.160`
 - Port: `502`
 - Slave ID: `1`
 

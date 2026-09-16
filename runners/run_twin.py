@@ -2209,7 +2209,7 @@ def main():
     print()
 
     # ─── Connect to Factory I/O ───
-    client = FactoryModbusClient("127.0.0.1", 502)
+    client = FactoryModbusClient("192.168.101.160", 502)
     if not client.connect():
         logger.error("❌ Could not connect to Modbus server.")
         logger.error("   Make sure Factory I/O is running with Modbus server enabled")

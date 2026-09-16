@@ -222,14 +222,14 @@ class Station7:
                 self.sorter_belt(True)
 
                 # Wait for sensor to clear (product passed)
-                while self.running:
+                while self.running and self.state == 2:
                     sensors = self.read_sensors()
                     if not sensors["sensor_7"]:
                         break
                     time.sleep(0.05)
 
-                if not self.running:
-                    break
+                if not self.running or self.state != 2:
+                    continue
 
                 print("[STN7] 🔄 Product passed through sorter...")
                 self.state = 3
@@ -263,6 +263,96 @@ class Station7:
 
     def stop(self):
         self.running = False
+
+    # ──────────────────────────────────────
+    # Fault Injection / Clearing
+    # ──────────────────────────────────────
+    def inject_fault(self, fault_type, severity=3):
+        """Inject a fault into this station.
+
+        Supported fault types: overheat, power, belt_slip, sensor_drift, sorter_jam, misroute
+        Severity: 1-5
+        """
+        severity = max(1, min(5, int(severity)))
+        self.active_faults[fault_type] = severity
+        self.fault_counters[fault_type] = self.fault_counters.get(fault_type, 0) + 1
+        print(f"[STN7] ⚡ FAULT INJECTED: {fault_type} severity={severity}")
+
+    def clear_fault(self, fault_type="all"):
+        """Clear active fault(s) and reset station state if stuck.
+
+        Args:
+            fault_type: specific fault name or "all" to clear everything
+        """
+        if fault_type == "all":
+            cleared = list(self.active_faults.keys())
+            self.active_faults.clear()
+            print(f"[STN7] ✅ ALL faults cleared: {cleared}")
+        elif fault_type in self.active_faults:
+            del self.active_faults[fault_type]
+            print(f"[STN7] ✅ Fault cleared: {fault_type}")
+        else:
+            print(f"[STN7] ⚠️ No active fault '{fault_type}' to clear")
+
+        # If station is stuck (state != 0 and not actively processing),
+        # reset state machine to allow recovery
+        if self.state != 0 and not self.active_faults:
+            old_state = self.state
+            self.state = 0
+            print(f"[STN7] 🔄 State reset from {old_state} → 0 (recovery)")
+
+    def get_status(self):
+        """Return current station status for telemetry and fault manager."""
+        rate = (self.good_count / self.product_count * 100) if self.product_count > 0 else 100.0
+        return {
+            "station_id": getattr(self, "STATION_ID", "station_7"),
+            "state": self.state,
+            "running": self.running,
+            "product_count": self.product_count,
+            "good_count": self.good_count,
+            "reject_count": self.reject_count,
+            "good_rate": round(rate, 1),
+            "last_sort_result": self.last_sort_result,
+            "faults": {
+                "has_fault": bool(self.active_faults),
+                "active": list(self.active_faults.keys()),
+                "details": dict(self.active_faults),
+            },
+        }
+
+    def apply_parameters(self, params: dict):
+        """Apply runtime parameter changes from the AI agent.
+
+        Supported keys:
+          clear_fault (str|bool): fault type to clear, or True for "all"
+          fan_speed (float): cooling fan percentage 0-100
+          speed_factor (float): sorting speed multiplier 0.1-2.0
+          target_belt_speed (float): belt speed target 10-100
+        """
+        print(f"[STN7] 🔧 apply_parameters: {params}")
+
+        # Clear faults
+        cf = params.get("clear_fault")
+        if cf:
+            fault_type = cf if isinstance(cf, str) and cf not in ("True", "true") else "all"
+            self.clear_fault(fault_type)
+
+        # Fan speed
+        if "fan_speed" in params:
+            fan = max(0, min(100, float(params["fan_speed"])))
+            print(f"[STN7]   Fan speed → {fan}%")
+
+        # Speed factor — affects arm timing
+        if "speed_factor" in params:
+            sf = max(0.1, min(2.0, float(params["speed_factor"])))
+            self.ARM_MOVE_TIME = 0.5 / sf
+            self.ARM_RETURN_TIME = 0.5 / sf
+            print(f"[STN7]   Speed factor → {sf} (arm_time={self.ARM_MOVE_TIME:.2f}s)")
+
+        # Belt speed target
+        if "target_belt_speed" in params:
+            tbs = max(10, min(100, float(params["target_belt_speed"])))
+            print(f"[STN7]   Belt speed target → {tbs}%")
 
 
 # ═══════════════════════════════════════════════════════
@@ -317,14 +407,14 @@ class SyncedStation7(Station7):
                 self._signal_ready()
 
                 print("[STN7] ⏳ Waiting for product...")
-                while self.running:
+                while self.running and self.state == 0:
                     sensors = self.read_sensors()
                     if sensors["sensor_7"]:
                         break
                     time.sleep(0.05)
 
-                if not self.running:
-                    break
+                if not self.running or self.state != 0:
+                    continue
 
                 self.cycle_start_time = time.time()
                 print("[STN7] 📦 Product detected!")
@@ -362,14 +452,14 @@ class SyncedStation7(Station7):
                 self.belt(True)
                 self.sorter_belt(True)
 
-                while self.running:
+                while self.running and self.state == 2:
                     sensors = self.read_sensors()
                     if not sensors["sensor_7"]:
                         break
                     time.sleep(0.05)
 
-                if not self.running:
-                    break
+                if not self.running or self.state != 2:
+                    continue
 
                 print("[STN7] 🔄 Product passed through sorter sensor...")
                 

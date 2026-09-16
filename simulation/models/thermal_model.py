@@ -233,7 +233,8 @@ class ThermalModel(BaseModel):
         if "line_speed_multiplier" in proposed_params:
             speed_after = proposed_params["line_speed_multiplier"]
 
-        fan_after = (proposed_params.get("aux_fan_speed")
+        fan_after = (proposed_params.get("fan_speed")
+                     or proposed_params.get("aux_fan_speed")
                      or proposed_params.get("aux_enclosure_fan_speed_percent")
                      or proposed_params.get("aux_fan_speed_percent")
                      or fan_now)

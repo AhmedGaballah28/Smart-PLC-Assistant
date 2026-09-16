@@ -1,0 +1,13 @@
+{
+  "name": "smart-plc-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Human interface and visualization dashboard for Smart PLC Assistant.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -17,7 +17,7 @@ def main():
     print("\n🔌 Connecting to Factory I/O...")
 
     client = ModbusClient(
-        host="127.0.0.1",
+        host="192.168.101.160",
         port=502,
         unit_id=1,
         auto_open=True,
